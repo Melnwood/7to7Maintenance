@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.06.29-warehouse -->
+<!-- BUILD STAMP: v2026.06.29-manage -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -72,6 +72,8 @@
   .whsearch{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:11px;font-size:1rem;box-sizing:border-box;margin-bottom:6px;}
   .addpart-wide{width:100%;background:#fff;border:1.5px dashed var(--navy);color:var(--navy);border-radius:12px;padding:12px;font-size:.92rem;font-weight:800;cursor:pointer;margin-bottom:12px;}
   .addpart-wide:active{background:#f3f8ff;}
+  #sheet textarea{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:11px;font-size:.95rem;box-sizing:border-box;font-family:inherit;}
+  #sheet select{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:11px;font-size:1rem;box-sizing:border-box;background:#fff;-webkit-appearance:none;appearance:none;}
   .po.ontag{background:#FBF1E4;color:#9A5E08;border-radius:999px;padding:6px 12px;font-size:.76rem;font-weight:800;}
   .ontag2{display:inline-block;font-size:.6rem;font-weight:800;color:#9A5E08;background:#FBF1E4;border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle;}
   .partstat{display:flex;gap:18px;font-size:.9rem;color:var(--muted);margin-bottom:14px;}
@@ -184,6 +186,7 @@
     <button data-t="recent">Recent</button>
     <button data-t="offices">Offices</button>
     <button data-t="warehouse">Warehouse</button>
+    <button data-t="manage">Manage</button>
   </div>
 </header>
 <div class="wrap" id="wrap"><div class="muted">Loading…</div></div>
@@ -192,7 +195,9 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const OFFICES=['Alamo Ranch','Braun','Bulverde','Cibolo','Forum','Leon Springs','Mission Oaks','Potranco','Sahota','Singing Hills','Stone Oak','TPC'];
+const OFFICES_FALLBACK=['Alamo Ranch','Braun','Bulverde','Cibolo','Forum','Leon Springs','Mission Oaks','Potranco','Sahota','Singing Hills','Stone Oak','TPC'];
+let officeNames=OFFICES_FALLBACK.slice();
+let assets=[];
 const CREW=['Adrian Ellenwood','Maintenance Tech 1','Maintenance Tech 2'];
 const STATUSES=['New','In progress','Pending','Part ordered','Fixed'];
 const FLOW=['New','In progress','Pending','Part ordered'];
@@ -242,7 +247,9 @@ if(ccUnlocked()){ document.getElementById('gate').classList.add('hide'); load();
 else { openGate(); }
 async function load(){
   try{ const r=await fetch(API); const d=await r.json(); if(d.error) throw new Error(d.error);
-    issues=d.issues||[]; log=d.worklog||[]; parts=d.parts||[]; render();
+    issues=d.issues||[]; log=d.worklog||[]; parts=d.parts||[]; assets=d.assets||[];
+    officeNames=(d.officeList&&d.officeList.length)?d.officeList.slice():OFFICES_FALLBACK.slice();
+    render();
   }catch(e){ $('#wrap').innerHTML='<div class="empty">Could not load.<br><span class="muted">'+esc(e.message||'')+'</span></div>'; }
 }
 $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{ tab=b.dataset.t; showDupes=false; selOffice=null; showOfficeDupes=false;
@@ -259,6 +266,7 @@ function render(){
     if(tab==='board') body=viewBoard(open,high,parts,dupes,dupeCount);
     else if(tab==='recent') body=viewRecent();
     else if(tab==='warehouse') body=viewWarehouse();
+    else if(tab==='manage') body=viewManage();
     else body=viewOffices();
     $('#wrap').innerHTML=body; wire();
   }catch(e){ $('#wrap').innerHTML='<div class="empty">Something went wrong drawing this view.<br><span class="muted">'+esc(e.message||'')+'</span></div>'; }
@@ -502,13 +510,123 @@ async function doAddPart(){
   }catch(e){ btn.disabled=false; btn.textContent='Add part'; err.textContent=String(e.message||'Could not add'); }
 }
 
+function viewManage(){
+  const cnt={}; assets.forEach(a=>{ if(a.office) cnt[a.office]=(cnt[a.office]||0)+1; });
+  let h='<div class="hint">Add new offices and their equipment here. Anything you add shows up across the app right away — no spreadsheet needed.</div>';
+  h+='<button class="addpart-wide" id="mg-addoffice">+ Add a new office</button>';
+  h+='<button class="addpart-wide" id="mg-addequip">+ Add equipment to an office</button>';
+  h+='<div class="vhdr">Offices<span class="vn">'+officeNames.length+'</span></div>';
+  h+='<div class="hint">Tap an office to add equipment to it.</div><div class="panel"><div class="ogrid">';
+  officeNames.forEach(o=>{ h+='<button class="ocard clear" data-mo="'+esc(o)+'"><span class="nm">'+esc(o)+'</span><span class="ct">'+(cnt[o]||0)+' item'+((cnt[o]||0)===1?'':'s')+'</span></button>'; });
+  h+='</div></div>';
+  return h;
+}
+
+function officeSelectHTML(sel){
+  let o='<select id="eq-office"><option value="">— choose office —</option>';
+  officeNames.forEach(n=>{ o+='<option'+(n===sel?' selected':'')+'>'+esc(n)+'</option>'; });
+  o+='<option value="__new">+ New office…</option></select>';
+  return o;
+}
+
+function openAddOffice(){
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 10px">Add a new office</h2>'+
+    '<label>Office name</label><input id="of-name" placeholder="e.g. Helotes">'+
+    '<div id="of-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="of-save">Add office</button>'+
+    '<button class="ghost-btn" id="of-cancel">Cancel</button>';
+  document.getElementById('of-save').onclick=doAddOffice;
+  document.getElementById('of-cancel').onclick=hide;
+  show(); setTimeout(()=>document.getElementById('of-name').focus(),60);
+}
+async function doAddOffice(){
+  const name=(document.getElementById('of-name').value||'').trim(); const err=document.getElementById('of-err');
+  if(!name){ err.textContent='Enter an office name.'; return; }
+  if(officeNames.some(o=>o.toLowerCase()===name.toLowerCase())){ err.textContent='That office already exists.'; return; }
+  const btn=document.getElementById('of-save'); btn.disabled=true; btn.textContent='Adding…';
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'addoffice',office:name})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not add');
+    officeNames.push(name); officeNames.sort();
+    toast('Office added'); openAddEquip(name);
+  }catch(e){ btn.disabled=false; btn.textContent='Add office'; err.textContent=String(e.message||'Could not add'); }
+}
+
+function openAddEquip(prefill){
+  const sel=prefill||'';
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 10px">Add equipment</h2>'+
+    '<label>Office</label>'+officeSelectHTML(sel)+
+    '<div id="eq-newoffice-wrap" style="display:'+(sel==='__new'?'block':'none')+'"><label>New office name</label><input id="eq-newoffice" placeholder="e.g. Helotes"></div>'+
+    '<label>Room / location</label><input id="eq-loc" placeholder="e.g. Op 1, Mechanical, Sterile">'+
+    '<div class="seg" style="margin:14px 0"><button class="on" id="eq-m-quick">One item</button><button id="eq-m-batch">Paste a batch</button></div>'+
+    '<div id="eq-quick">'+
+      '<label>Type</label><input id="eq-type" placeholder="e.g. Chair, X-Ray, Light, Vac">'+
+      '<label>Asset number</label><input id="eq-num" placeholder="optional">'+
+      '<label>Serial number</label><input id="eq-serial" placeholder="optional">'+
+      '<label>Make / model</label><input id="eq-model" placeholder="optional">'+
+      '<label>Date</label><input id="eq-date" placeholder="optional, e.g. 2025">'+
+    '</div>'+
+    '<div id="eq-batch-wrap" style="display:none">'+
+      '<label>Paste rows — one item per line</label>'+
+      '<div class="hint">Order: Asset#, Type, Serial, Make/Model, Date — separated by commas or tabs. Only Type is required. You can copy straight from a spreadsheet.</div>'+
+      '<textarea id="eq-batch" rows="8" placeholder="1056, Chair, 16254-1121, Dansereau, 2021&#10;1057, X-Ray, A03997, Corix, 2021"></textarea>'+
+    '</div>'+
+    '<div id="eq-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="eq-save">Add equipment</button>'+
+    '<button class="ghost-btn" id="eq-cancel">Cancel</button>';
+  const so=document.getElementById('eq-office');
+  so.onchange=()=>{ document.getElementById('eq-newoffice-wrap').style.display = so.value==='__new'?'block':'none'; };
+  document.getElementById('eq-m-quick').onclick=()=>setEqMode('quick');
+  document.getElementById('eq-m-batch').onclick=()=>setEqMode('batch');
+  document.getElementById('eq-save').onclick=doAddEquip;
+  document.getElementById('eq-cancel').onclick=hide;
+  show();
+}
+function setEqMode(m){
+  document.getElementById('eq-quick').style.display = m==='quick'?'block':'none';
+  document.getElementById('eq-batch-wrap').style.display = m==='batch'?'block':'none';
+  document.getElementById('eq-m-quick').classList.toggle('on',m==='quick');
+  document.getElementById('eq-m-batch').classList.toggle('on',m==='batch');
+}
+async function doAddEquip(){
+  const err=document.getElementById('eq-err');
+  const so=document.getElementById('eq-office');
+  let office=so.value;
+  if(office==='__new'){ office=(document.getElementById('eq-newoffice').value||'').trim(); }
+  if(!office){ err.textContent='Choose or name an office.'; return; }
+  const loc=(document.getElementById('eq-loc').value||'').trim();
+  if(!loc){ err.textContent='Enter a room / location.'; return; }
+  const batchMode = document.getElementById('eq-batch-wrap').style.display!=='none';
+  let rows=[];
+  if(batchMode){
+    const lines=(document.getElementById('eq-batch').value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    if(!lines.length){ err.textContent='Paste at least one line.'; return; }
+    rows=lines.map(line=>{ const c=line.split(/\t|,/).map(s=>s.trim());
+      return {office:office,location:loc,number:c[0]||'',asset:c[1]||'',serial:c[2]||'',model:c[3]||'',date:c[4]||''}; })
+      .filter(r=>r.asset||r.number||r.serial);
+    if(!rows.length){ err.textContent='Could not read any rows. Check the order: Asset#, Type, Serial, Make/Model, Date.'; return; }
+  } else {
+    const type=(document.getElementById('eq-type').value||'').trim();
+    if(!type){ err.textContent='Enter the equipment type (e.g. Chair).'; return; }
+    rows=[{office:office,location:loc,number:(document.getElementById('eq-num').value||'').trim(),asset:type,
+      serial:(document.getElementById('eq-serial').value||'').trim(),model:(document.getElementById('eq-model').value||'').trim(),
+      date:(document.getElementById('eq-date').value||'').trim()}];
+  }
+  const btn=document.getElementById('eq-save'); btn.disabled=true; btn.textContent='Adding…';
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'addasset',assets:rows})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not add');
+    rows.forEach(rw=>{ assets.push({id:'tmp'+Math.random(),number:rw.number,location:rw.location,asset:rw.asset,serial:rw.serial,model:rw.model,date:rw.date,maker:'',office:rw.office}); });
+    if(!officeNames.some(o=>o.toLowerCase()===office.toLowerCase())){ officeNames.push(office); officeNames.sort(); }
+    toast((d.created||rows.length)+' item'+((d.created||rows.length)===1?'':'s')+' added'); hide(); render();
+  }catch(e){ btn.disabled=false; btn.textContent='Add equipment'; err.textContent=String(e.message||'Could not add'); }
+}
+
 function viewOffices(){
   const open=issues.filter(isOpen);
   if(!selOffice){
     const byOff={},hiOff={};
     open.forEach(i=>{ byOff[i.office]=(byOff[i.office]||0)+1; if(i.impact==='high')hiOff[i.office]=true; });
     let h='<div class="hint">Pick an office to see its board.</div><div class="panel"><div class="ogrid">';
-    OFFICES.forEach(o=>{ const n=byOff[o]||0;
+    officeNames.forEach(o=>{ const n=byOff[o]||0;
       h+='<button class="ocard'+(n?'':' clear')+'" data-o="'+o+'"><span class="nm">'+o+'</span>'+
          '<span class="ct">'+(n?('<span class="d'+(hiOff[o]?' hi':'')+'"></span>'+n+' open'+(hiOff[o]?' · high':'')):'all clear')+'</span></button>';
     });
@@ -538,6 +656,9 @@ function wire(){
   $('#wrap').querySelectorAll('[data-wh]').forEach(c=>c.onclick=()=>{ whMode=c.dataset.wh; render(); });
   $('#wrap').querySelectorAll('[data-part]').forEach(c=>c.onclick=()=>openPart(c.dataset.part));
   const ap=document.getElementById('wh-addpart'); if(ap) ap.onclick=openAddPart;
+  const mo=document.getElementById('mg-addoffice'); if(mo) mo.onclick=()=>openAddOffice();
+  const me=document.getElementById('mg-addequip'); if(me) me.onclick=()=>openAddEquip('');
+  $('#wrap').querySelectorAll('[data-mo]').forEach(c=>c.onclick=()=>openAddEquip(c.dataset.mo));
   const ws=document.getElementById('wh-search');
   if(ws){ ws.oninput=()=>{ const pos=ws.selectionStart; whSearch=ws.value; render();
     const n=document.getElementById('wh-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }

@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- BUILD STAMP: v2026.06.29-manage -->
 <title>Chair Check — Report a problem</title>
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--ink:#14202b;--muted:#6b7a89;
@@ -79,7 +80,8 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const OFFICES=['Alamo Ranch','Braun','Bulverde','Cibolo','Forum','Leon Springs','Mission Oaks','Potranco','Sahota','Singing Hills','Stone Oak','TPC'];
+const OFFICES_FALLBACK=['Alamo Ranch','Braun','Bulverde','Cibolo','Forum','Leon Springs','Mission Oaks','Potranco','Sahota','Singing Hills','Stone Oak','TPC'];
+let OFFICES=OFFICES_FALLBACK.slice();
 const API='/.netlify/functions/airtable';
 const $=s=>document.querySelector(s);
 function qs(k){return new URLSearchParams(location.search).get(k)||'';}
@@ -89,12 +91,16 @@ function fmt(d){if(!d)return'';const x=new Date(d+'T00:00');return isNaN(x)?d:x.
 let office=qs('office');
 let draft={chair:'',problem:'',impact:'',reporter:''};
 
-if(!OFFICES.includes(office)){ renderChooser(); } else { boot(); }
+// Any office named in the URL is valid — this is how brand-new offices get a working report page.
+if(office){ boot(); } else { renderChooser(); }
 
 function renderChooser(){
   $('#sub').textContent='Pick your office';
-  $('#app').innerHTML='<div class="card chooser"><h2>Which office is this?</h2>'+
-    OFFICES.map(o=>`<button onclick="pick('${o}')">${o}</button>`).join('')+'</div>';
+  $('#app').innerHTML='<div class="card chooser"><h2>Which office is this?</h2><div id="chooserlist">'+
+    OFFICES.map(o=>`<button onclick="pick('${o.replace(/'/g,"\\'")}')">${o}</button>`).join('')+'</div></div>';
+  // refresh the chooser with the live office list (includes any newly added offices)
+  fetch(API).then(r=>r.json()).then(d=>{ if(d&&d.officeList&&d.officeList.length){ OFFICES=d.officeList.slice();
+    const el=document.getElementById('chooserlist'); if(el) el.innerHTML=OFFICES.map(o=>`<button onclick="pick('${o.replace(/'/g,"\\'")}')">${o}</button>`).join(''); } }).catch(()=>{});
 }
 function pick(o){ location.search='?office='+encodeURIComponent(o); }
 

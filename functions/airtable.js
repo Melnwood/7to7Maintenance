@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.06.29-warehouse
+// BUILD: v2026.06.29-manage
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -7,6 +7,7 @@ const PROBLEMS = 'tblEPLcgnxd8JLNCQ';
 const WORKLOG  = 'tblrETFLBC86UP7dd';
 const PARTS    = 'tblGjZycgUCNxSdY0';
 const OFFICES  = 'tblQtsQmJuoRvbT2q';
+const ASSETS   = 'tbl313FCS3qRDNAmc';
 const API = 'https://api.airtable.com/v0/' + BASE_ID;
 
 const P  = { problem:'Problem', office:'Office', chair:'Chair/Area', urgency:'Urgency',
@@ -20,6 +21,8 @@ const MAXBYNUM = {"7052":15,"5873":12,"5877":5,"6161":10,"DA1175-FI":8,"4580":12
 const PT = { name:'Part name', number:'Part number', stock:'In warehouse', reorderAt:'Reorder at',
              bin:'Bin', vendor:'Vendor', lastOrdered:'Last ordered', onOrder:'On order qty', orderDate:'Order date', max:'Max' };
 const OF = { office:'Office', ops:'Ops', areas:'Area names', notes:'Notes' };
+const AS = { number:'Asset Number', location:'Location', asset:'Asset', serial:'Serial Number',
+             model:'Make/Model', date:'Manufacture Date', maker:'Manufacturer', office:'Office' };
 
 exports.handler = async function (event) {
   const token = process.env.AIRTABLE_TOKEN;
@@ -32,12 +35,21 @@ exports.handler = async function (event) {
       const log    = await fetchAll(WORKLOG, headers, '');
       const parts  = await fetchAll(PARTS, headers, '');
       const offices= await fetchAll(OFFICES, headers, '');
+      const assets = await fetchAll(ASSETS, headers, '');
+      // Live office list = union of Offices table + any office found on assets or problems
+      var offSet = {};
+      offices.forEach(function(o){ var n=String((o.fields[OF.office]||'')).trim(); if(n) offSet[n]=true; });
+      assets.forEach(function(a){ var n=String((a.fields[AS.office]||'')).trim(); if(n) offSet[n]=true; });
+      issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
+      var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.06.29-warehouse',
+        build: 'v2026.06.29-manage',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
-        offices: offices.map(mapOffice)
+        offices: offices.map(mapOffice),
+        assets: assets.map(mapAsset),
+        officeList: officeList
       });
     }
     if (event.httpMethod === 'POST') {
@@ -49,6 +61,8 @@ exports.handler = async function (event) {
       if (b.action === 'receive')return resp(200, await receivePart(b, headers));
       if (b.action === 'adjust') return resp(200, await adjustPart(b, headers));
       if (b.action === 'addpart')return resp(200, await addPart(b, headers));
+      if (b.action === 'addoffice')return resp(200, await addOffice(b, headers));
+      if (b.action === 'addasset')return resp(200, await addAssets(b, headers));
       return resp(400, { error: 'unknown action' });
     }
     return resp(405, { error: 'method not allowed' });
@@ -94,6 +108,10 @@ function mapPart(r){ var f=r.fields; var s=f[PT.stock], ra=f[PT.reorderAt];
   orderNow:(typeof s==='number' && typeof ra==='number' && s<=ra) }; }
 function mapOffice(r){ var f=r.fields; return {
   id:r.id, office:f[OF.office]||'', ops:(f[OF.ops]==null?'':f[OF.ops]), areas:f[OF.areas]||'', notes:f[OF.notes]||'' }; }
+
+function mapAsset(r){ var f=r.fields; return {
+  id:r.id, number:f[AS.number]||'', location:f[AS.location]||'', asset:f[AS.asset]||'',
+  serial:f[AS.serial]||'', model:f[AS.model]||'', date:f[AS.date]||'', maker:f[AS.maker]||'', office:f[AS.office]||'' }; }
 
 async function addIssue(b, headers){
   var fields = {};
@@ -258,4 +276,45 @@ async function addPart(b, headers){
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   var j = await r.json();
   return { ok:true, id:j.id };
+}
+
+// create a new office row in the Offices table (so an office can exist before it has equipment)
+async function addOffice(b, headers){
+  var name = String(b.office || '').trim();
+  if (!name) return { ok:false, error:'Office name is required.' };
+  var existing = await fetchAll(OFFICES, headers, "{" + OF.office + "} = '" + esc(name) + "'");
+  if (existing.length) return { ok:false, error:'An office named ' + name + ' already exists.' };
+  var fields = {}; fields[OF.office] = name;
+  var r = await fetch(API + '/' + OFFICES, { method:'POST', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  var j = await r.json();
+  return { ok:true, id:j.id, office:name };
+}
+
+// create one or many asset rows in the Assets table (batched 10 per request)
+async function addAssets(b, headers){
+  var rows = Array.isArray(b.assets) ? b.assets : [];
+  var recs = [];
+  rows.forEach(function(a){
+    var f = {};
+    if (a.office)   f[AS.office]   = String(a.office).trim();
+    if (a.location) f[AS.location] = String(a.location).trim();
+    if (a.number)   f[AS.number]   = String(a.number).trim();
+    if (a.asset)    f[AS.asset]    = String(a.asset).trim();
+    if (a.serial)   f[AS.serial]   = String(a.serial).trim();
+    if (a.model)    f[AS.model]    = String(a.model).trim();
+    if (a.date)     f[AS.date]     = String(a.date).trim();
+    if (a.maker)    f[AS.maker]    = String(a.maker).trim();
+    if (Object.keys(f).length) recs.push({ fields:f });
+  });
+  if (!recs.length) return { ok:false, error:'No equipment to add.' };
+  var created = 0;
+  for (var i=0;i<recs.length;i+=10){
+    var chunk = recs.slice(i,i+10);
+    var r = await fetch(API + '/' + ASSETS, { method:'POST', headers:headers, body: JSON.stringify({ records:chunk, typecast:true }) });
+    if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+    var j = await r.json();
+    created += (j.records || []).length;
+  }
+  return { ok:true, created:created };
 }
