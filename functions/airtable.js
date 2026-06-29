@@ -13,6 +13,9 @@ const P  = { problem:'Problem', office:'Office', chair:'Chair/Area', urgency:'Ur
 const W  = { entry:'Entry', problemId:'Problem ID', date:'Date', who:'Who', note:'Note',
              partNumber:'Part number', qty:'Qty used', photo:'Photo' };
 const PHOTO_FIELD = 'fldEcNp6pnrOaYErL'; // Work Log → Photo (attachments)
+
+// "Max" target per part number (how many they want on the shelf) — from the warehouse sheet
+const MAXBYNUM = {"7052":15,"5873":12,"5877":5,"6161":10,"DA1175-FI":8,"4580":12,"4585":8,"DA1173-CB":4,"3635":25,"~0044":4,"8164":10,"JazzHolder":10,"DA1254-HUB":4,"DA1236UHB":10,"DA-m-0018-CST":10,"DA1153-S":6,"MGT-2450":4,"DA-M-0018-DD":2,"DA-M-0018-CSM 30K":3,"DA-M-0018-CFM 25K":1,"432T":10,"4421":4,"4425":4,"8631":2,"8959":8,"3600":6,"3640":4,"5150":8,"DA1284-5":0,"5660":15,"7795543":4,"5670":10,"8688":6,"8890":6,"7350":15,"4430":4,"4433":4,"5948":4,"120T":0,"9556059":10,"3637":18,"DA-M-0018-CSAEC":8,"DA1138-WH":4,"~0053":4,"6301":8,"DA1162-PC":2,"DA1172-A":1,"DA1287LID":2,"DA1278-Base":2,"5811":2,"5171":10,"DA0018-SOL":3,"2110":1,"P31-07E":2,"~0052":0,"AE-23":0,"P31-16":1,"S611R":40,"432R":0,"DA1340FE":0,"DA1345-SH":0,"8941":6,"JazzExt Cable":0,"G1429075":2,"G210375001":0,"G0321422":0,"9963659":0,"DA1178-CMSV":0,"DA1178-MSV":0,"9559097":14,"733":40,"Jazzext C-C":8,"8136":10,"8943":10,"DA1231-CBB":6,"7784806":10,"C Hub":5,"703":10,"0123":8,"7012":0};
 const PT = { name:'Part name', number:'Part number', stock:'In warehouse', reorderAt:'Reorder at',
              bin:'Bin', vendor:'Vendor', lastOrdered:'Last ordered' };
 const OF = { office:'Office', ops:'Ops', areas:'Area names', notes:'Notes' };
@@ -76,9 +79,9 @@ function mapLog(r){ var f=r.fields; var ph=f[W.photo]; return {
   id:r.id, issueId:f[W.problemId]||'', date:f[W.date]||'', who:f[W.who]||'', note:f[W.note]||'',
   partNumber:f[W.partNumber]||'', qty:f[W.qty]||'',
   photo:(ph&&ph[0])?((ph[0].thumbnails&&ph[0].thumbnails.large&&ph[0].thumbnails.large.url)||ph[0].url):'' }; }
-function mapPart(r){ var f=r.fields; var s=f[PT.stock], ra=f[PT.reorderAt]; return {
+function mapPart(r){ var f=r.fields; var s=f[PT.stock], ra=f[PT.reorderAt]; var mx=MAXBYNUM[f[PT.number]]; return {
   id:r.id, name:f[PT.name]||'', number:f[PT.number]||'', inStock:(s==null?'':s), reorderAt:(ra==null?'':ra),
-  bin:f[PT.bin]||'', vendor:f[PT.vendor]||'', lastOrdered:f[PT.lastOrdered]||'',
+  max:(mx==null?'':mx), bin:f[PT.bin]||'', vendor:f[PT.vendor]||'', lastOrdered:f[PT.lastOrdered]||'',
   orderNow:(typeof s==='number' && typeof ra==='number' && s<=ra) }; }
 function mapOffice(r){ var f=r.fields; return {
   id:r.id, office:f[OF.office]||'', ops:(f[OF.ops]==null?'':f[OF.ops]), areas:f[OF.areas]||'', notes:f[OF.notes]||'' }; }
