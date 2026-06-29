@@ -140,6 +140,20 @@
   .prow2 .pl{flex:1;min-width:0;} .prow2 .pn{font-weight:800;color:var(--ink);font-size:.92rem;}
   .prow2 .pm{font-size:.76rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .prow2 .po b{color:var(--high);font-size:1rem;white-space:nowrap;}
+  .stack{display:block;}
+  .sec{margin-bottom:10px;}
+  .sechead{display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:11px;cursor:pointer;background:var(--surface);border:1px solid var(--line);transition:border-color .12s;}
+  .sechead:hover{border-color:#bcd0e2;}
+  .sechead .cw{width:9px;height:9px;border-radius:50%;flex:0 0 auto;}
+  .sechead .snm{font-weight:800;font-size:.9rem;color:var(--ink);flex:1;}
+  .sechead .sct{font-size:.74rem;font-weight:800;color:var(--muted);background:#eef2f5;border-radius:999px;padding:2px 9px;}
+  .sechead .cv{color:var(--muted);font-size:.8rem;transition:transform .15s;margin-left:2px;}
+  .sec.col .cv{transform:rotate(-90deg);}
+  .sec .cards{padding:9px 0 2px;}
+  .sec.col .cards{display:none;}
+  .sec .none{font-size:.78rem;color:var(--muted);padding:8px 4px;}
+  .s-new{background:#3b82c4;} .s-prog{background:var(--primary);} .s-pend{background:var(--med);} .s-part{background:#8A5CC4;} .s-fixed{background:var(--green);}
+  .p-high{background:var(--high);} .p-med{background:var(--med);} .p-low{background:var(--low);} .p-none{background:#cdd5dc;}
   .backbtn{display:inline-flex;align-items:center;gap:5px;background:none;border:none;color:var(--navy);font-weight:800;font-size:.9rem;cursor:pointer;padding:4px 2px;margin-bottom:6px;}
   .ohead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px;}
   .ohead .nm{font-size:1.08rem;font-weight:800;}
@@ -238,6 +252,8 @@ const MS=86400000;
 let issues=[], log=[], parts=[], tab='board', filter='', selOffice=null, sortMode='priority';
 let pendingPhoto=null;
 let whMode='order', whSearch='';
+let openSecs={};
+let boardMode='status';
 let dismissed={}, showDupes=false, showOfficeDupes=false;
 
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1900);}
@@ -310,7 +326,7 @@ function viewBoard(open){
     statTile('dupes',dupeCount,'Duplicates','dupe')+'</div>';
   if(filter==='parts') return h+partsWindow(partsWait);
   if(filter==='dupes') return h+(dupeCount?dupeSection(dupes,'across all offices'):'<div class="empty">No duplicates right now. 👍</div>');
-  if(filter==='open') return h+boardHint('date')+kanban(open,FLOW);
+  if(filter==='open') return h+boardModeToggle()+stackBoard(open);
   // default home dashboard
   h+=crewSpeedCard();
   h+=attentionLine(open);
@@ -406,8 +422,8 @@ function sortToggle(){
 }
 function boardHint(mode){
   return '<div class="hint">'+(mode==='priority'
-    ? 'By priority — swipe across High · Medium · Low.'
-    : 'By status — swipe across New → In progress → Pending → Part ordered.')+'</div>';
+    ? 'By priority — High · Medium · Low.'
+    : 'Tap a status to open it.')+'</div>';
 }
 function priorityColumns(list){
   const order=[['high','High'],['medium','Medium'],['low','Low']];
@@ -425,17 +441,37 @@ function priorityColumns(list){
   return h;
 }
 
-function kanban(list,statuses){
-  let h='<div class="board">';
-  statuses.forEach(st=>{
-    const items=list.filter(i=>i.status===st).sort(byOldest);
-    h+='<div class="col"><div class="ch"><span class="t">'+st+'</span><span class="n">'+items.length+'</span></div>';
-    if(items.length) items.forEach(i=>h+=kcard(i)); else h+='<div class="none">—</div>';
-    h+='</div>';
-  });
+function boardModeToggle(){
+  return '<div class="sortrow"><div class="seg">'+
+    '<button class="'+(boardMode==='status'?'on':'')+'" data-bmode="status">By status</button>'+
+    '<button class="'+(boardMode==='priority'?'on':'')+'" data-bmode="priority">By priority</button></div></div>'+
+    '<div class="hint">Tap a '+(boardMode==='priority'?'level':'status')+' to open it.</div>';
+}
+function secBlock(name,dotcls,items,showStatus){
+  const isOpen=!!openSecs[name];
+  let h='<div class="sec'+(isOpen?'':' col')+'">'+
+    '<div class="sechead" data-sec="'+esc(name)+'"><span class="cw '+dotcls+'"></span>'+
+    '<span class="snm">'+esc(name)+'</span><span class="sct">'+items.length+'</span><span class="cv">▾</span></div>'+
+    '<div class="cards">';
+  if(items.length) items.forEach(i=>h+=kcard(i,showStatus)); else h+='<div class="none">Nothing here.</div>';
+  h+='</div></div>';
+  return h;
+}
+function stackBoard(list){
+  let h='<div class="stack">';
+  if(boardMode==='priority'){
+    [['high','High','p-high'],['medium','Medium','p-med'],['low','Low','p-low']].forEach(g=>{
+      h+=secBlock(g[1], g[2], list.filter(i=>(i.impact||'')===g[0]).sort(byOldest), true); });
+    const none=list.filter(i=>!i.impact || !PRILABEL[i.impact]);
+    if(none.length) h+=secBlock('Not set','p-none', none.sort(byOldest), true);
+  } else {
+    const dot={'New':'s-new','In progress':'s-prog','Pending':'s-pend','Part ordered':'s-part','Fixed':'s-fixed'};
+    FLOW.forEach(st=>{ h+=secBlock(st, dot[st]||'', list.filter(i=>i.status===st).sort(byOldest), false); });
+  }
   h+='</div>';
   return h;
 }
+function kanban(list,statuses){ return stackBoard(list); }
 function kcard(i,showStatus){
   const n=daysAgo(i.date); const old=n!=null&&n>=14;
   const pri=(i.impact&&PRILABEL[i.impact])?'<span class="kpill '+i.impact+'">'+PRILABEL[i.impact]+'</span>':'';
@@ -753,9 +789,8 @@ function viewOffices(){
   if(oCount){ h+='<div class="dupbtn" data-officedupes="1">⚠︎ '+oCount+' possible duplicates here — '+(showOfficeDupes?'hide':'review')+'</div>'; }
   if(showOfficeDupes && oCount){ h+=dupeSection(oClusters, 'at '+selOffice); }
   if(!ongoing.length){ h+='<div class="empty">Nothing open at '+esc(selOffice)+'. 🎉</div>'; return h; }
-  h+=sortToggle();
-  if(sortMode==='priority'){ h+=boardHint('priority'); h+=priorityColumns(ongoing); }
-  else { h+=boardHint('date'); h+=kanban(ongoing,FLOW); }
+  h+=boardModeToggle();
+  h+=stackBoard(ongoing);
   return h;
 }
 
@@ -777,6 +812,8 @@ function wire(){
   $('#wrap').querySelectorAll('[data-goff]').forEach(c=>c.onclick=()=>{ tab='offices'; selOffice=c.dataset.goff; showOfficeDupes=false; filter='';
     $('#tabs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.t==='offices')); render(); });
   $('#wrap').querySelectorAll('[data-back]').forEach(c=>c.onclick=()=>{ selOffice=null; showOfficeDupes=false; render(); });
+  $('#wrap').querySelectorAll('[data-sec]').forEach(c=>c.onclick=()=>{ const s=c.dataset.sec; openSecs[s]=!openSecs[s]; render(); });
+  $('#wrap').querySelectorAll('[data-bmode]').forEach(c=>c.onclick=()=>{ boardMode=c.dataset.bmode; render(); });
   $('#wrap').querySelectorAll('[data-officedupes]').forEach(c=>c.onclick=()=>{ showOfficeDupes=!showOfficeDupes; render(); });
   $('#wrap').querySelectorAll('[data-dismiss]').forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); dismissed[c.dataset.dismiss]=true; render(); });
 }
