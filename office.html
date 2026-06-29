@@ -110,7 +110,7 @@ function render(){
       <button class="primary-btn" id="submit" disabled>Submit report</button>
     </div>
     <div class="card">
-      <h2>Open at ${office}</h2>
+      <h2>Ongoing requests — ${office} <span id="list-count" class="muted" style="font-weight:600;font-size:.8rem"></span></h2>
       <div id="list"><div class="muted">Loading…</div></div>
     </div>`;
   $('#f-name').oninput=$('#f-chair').oninput=$('#f-desc').oninput=sync;
@@ -138,18 +138,23 @@ async function load(){
 }
 
 function renderList(issues, log){
+  const rankm={high:0,medium:1,low:2,'':3};
   const open=issues.filter(i=>i.status!=='Fixed')
-    .sort((a,b)=>({high:0,medium:1,low:2}[a.impact]-{high:0,medium:1,low:2}[b.impact]) || (b.date||'').localeCompare(a.date||''));
-  if(!open.length){ $('#list').innerHTML='<div class="empty">All clear — nothing open right now.</div>'; return; }
+    .sort((a,b)=>(rankm[a.impact]-rankm[b.impact]) || (b.date||'').localeCompare(a.date||''));
+  const cnt=document.getElementById('list-count');
+  if(cnt) cnt.textContent='('+open.length+(open.length===1?' open)':' open)');
+  if(!open.length){ $('#list').innerHTML='<div class="empty">All clear — nothing ongoing right now.</div>'; return; }
   $('#list').innerHTML=open.map(i=>{
     const notes=log.filter(n=>n.issueId===i.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
     const last=notes[notes.length-1];
+    const histLine = i.history ? String(i.history).split('\n').map(x=>x.trim()).filter(Boolean).pop() : '';
+    const upd = last ? ((last.who?'<b>'+last.who+'</b> · ':'')+last.note) : histLine;
     return `<div class="issue">
       <div class="top"><span class="loc">${i.chair||'—'}</span><span class="status ${i.status}">${i.status}</span></div>
       <div class="desc">${i.problem}</div>
-      <span class="pill ${i.impact}">${i.impact}</span>
-      <span class="muted"> · ${fmt(i.date)}${i.reporter?' · by '+i.reporter:''}</span>
-      ${last?`<div class="note">${last.who?'<b>'+last.who+'</b> · ':''}${last.note}</div>`:''}
+      ${i.impact?`<span class="pill ${i.impact}">${i.impact}</span>`:''}
+      <span class="muted"> · reported ${fmt(i.date)}${i.reporter?' · by '+i.reporter:''}</span>
+      ${upd?`<div class="note">${upd}</div>`:''}
     </div>`;
   }).join('');
 }
