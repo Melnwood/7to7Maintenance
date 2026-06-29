@@ -48,6 +48,16 @@
   .muted{color:var(--muted);font-size:.85rem;}
   .note{font-size:.82rem;color:#48555f;background:var(--bg);border-radius:8px;padding:7px 9px;margin-top:6px;}
   .empty{text-align:center;color:var(--muted);padding:24px;}
+  .sechdr{display:flex;align-items:center;gap:8px;margin:14px 0 6px;}
+  .sechdr .t{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:800;}
+  .sechdr .n{font-size:.7rem;font-weight:800;color:var(--muted);background:var(--line);border-radius:999px;padding:1px 8px;}
+  .r{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:10px 11px;margin-bottom:6px;cursor:pointer;}
+  .r .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--low);}
+  .r .dot.high{background:var(--high);} .r .dot.medium{background:var(--med);}
+  .r .loc{font-weight:800;font-size:.9rem;white-space:nowrap;}
+  .r .pr{flex:1;font-size:.86rem;color:#39434d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:30px;}
+  .r .ag{font-size:.72rem;color:var(--muted);white-space:nowrap;}
+  .rdet{font-size:.82rem;color:#48555f;background:var(--bg);border-radius:8px;padding:9px 11px;margin:-2px 0 8px;white-space:pre-wrap;}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;
     padding:12px 18px;border-radius:999px;font-weight:700;font-size:.9rem;opacity:0;transition:opacity .2s;z-index:50;}
   .toast.show{opacity:1;}
@@ -138,26 +148,40 @@ async function load(){
 }
 
 function renderList(issues, log){
-  const rankm={high:0,medium:1,low:2,'':3};
-  const open=issues.filter(i=>i.status!=='Fixed')
-    .sort((a,b)=>(rankm[a.impact]-rankm[b.impact]) || (b.date||'').localeCompare(a.date||''));
+  const FLOW=['New','In progress','Pending','Part ordered'];
+  const ongoing=issues.filter(i=>i.status!=='Fixed');
   const cnt=document.getElementById('list-count');
-  if(cnt) cnt.textContent='('+open.length+(open.length===1?' open)':' open)');
-  if(!open.length){ $('#list').innerHTML='<div class="empty">All clear — nothing ongoing right now.</div>'; return; }
-  $('#list').innerHTML=open.map(i=>{
-    const notes=log.filter(n=>n.issueId===i.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    const last=notes[notes.length-1];
-    const histLine = i.history ? String(i.history).split('\n').map(x=>x.trim()).filter(Boolean).pop() : '';
-    const upd = last ? ((last.who?'<b>'+last.who+'</b> · ':'')+last.note) : histLine;
-    return `<div class="issue">
-      <div class="top"><span class="loc">${i.chair||'—'}</span><span class="status ${i.status}">${i.status}</span></div>
-      <div class="desc">${i.problem}</div>
-      ${i.impact?`<span class="pill ${i.impact}">${i.impact}</span>`:''}
-      <span class="muted"> · reported ${fmt(i.date)}${i.reporter?' · by '+i.reporter:''}</span>
-      ${upd?`<div class="note">${upd}</div>`:''}
-    </div>`;
-  }).join('');
+  if(cnt) cnt.textContent='('+ongoing.length+(ongoing.length===1?' open)':' open)');
+  if(!ongoing.length){ $('#list').innerHTML='<div class="empty">All clear — nothing ongoing right now.</div>'; return; }
+  const rankm={high:0,medium:1,low:2,'':3};
+  let h='';
+  FLOW.forEach(st=>{
+    const list=ongoing.filter(i=>i.status===st).sort((a,b)=>(rankm[a.impact]-rankm[b.impact])||(b.date||'').localeCompare(a.date||''));
+    if(!list.length) return;
+    h+='<div class="sechdr"><span class="t">'+st+'</span><span class="n">'+list.length+'</span></div>';
+    list.forEach(i=>{
+      const n=daysAgo(i.date);
+      const notes=log.filter(x=>x.issueId===i.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+      const last=notes[notes.length-1];
+      const histLine = i.history ? String(i.history).split('\n').map(x=>x.trim()).filter(Boolean).pop() : '';
+      const det = 'Reported '+fmt(i.date)+(i.reporter?' by '+i.reporter:'')+
+        (last?('\n'+(last.who?last.who+': ':'')+last.note):(histLine?('\n'+histLine):''));
+      h+='<div class="r" data-id="'+i.id+'"><span class="dot '+(i.impact||'')+'"></span>'+
+         '<span class="loc">'+(i.chair||'—')+'</span>'+
+         '<span class="pr">'+i.problem+'</span>'+
+         '<span class="ag">'+(n==null?'':(n<=0?'today':n+'d'))+'</span></div>'+
+         '<div class="rdet" id="det-'+i.id+'" style="display:none">'+det.replace(/</g,'&lt;')+'</div>';
+    });
+  });
+  $('#list').innerHTML=h;
+  $('#list').querySelectorAll('.r').forEach(r=>r.onclick=()=>{
+    const d=document.getElementById('det-'+r.dataset.id);
+    if(d) d.style.display = d.style.display==='none' ? 'block' : 'none';
+  });
 }
+function daysAgo(s){ if(!s) return null; const x=new Date(s+'T00:00'); if(isNaN(x)) return null;
+  const t=new Date(); const t0=new Date(t.getFullYear(),t.getMonth(),t.getDate());
+  return Math.round((t0-x)/86400000); }
 
 async function submit(){
   if($('#submit').disabled) return;
