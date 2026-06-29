@@ -117,6 +117,14 @@
   .speedcard span{font-size:.8rem;color:#3d6b50;font-weight:700;line-height:1.3;}
   .speedcard .sub2{font-weight:600;color:#5a8068;font-size:.72rem;}
   .speedcard.empty2{background:#f6f8fa;border-color:var(--line);} .speedcard.empty2 b{color:var(--muted);} .speedcard.empty2 span{color:var(--muted);}
+  .twowin{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;align-items:stretch;}
+  .twowin>.attn,.twowin>.speedcard{margin-bottom:0;height:100%;box-sizing:border-box;}
+  .twowin>.speedcard{flex-direction:column;align-items:flex-start;gap:4px;}
+  .twowin>.speedcard b{font-size:1.3rem;}
+  .twowin>.attn{align-items:flex-start;}
+  .twowin .attn .t{font-size:.8rem;} .twowin .speedcard span{font-size:.76rem;}
+  .s-rank{background:var(--navy);}
+  @media(max-width:360px){ .twowin{grid-template-columns:1fr;} }
   .attn{display:flex;gap:11px;align-items:center;background:#FFF6F6;border:1px solid #f3c9cb;border-radius:14px;padding:12px 14px;margin-bottom:16px;cursor:pointer;}
   .attn .ico{font-size:1.05rem;flex:0 0 auto;}
   .attn .t{font-size:.85rem;color:#9a2a2e;font-weight:700;line-height:1.35;}
@@ -327,10 +335,36 @@ function viewBoard(open){
   if(filter==='parts') return h+partsWindow(partsWait);
   if(filter==='dupes') return h+(dupeCount?dupeSection(dupes,'across all offices'):'<div class="empty">No duplicates right now. 👍</div>');
   if(filter==='open') return h+boardModeToggle()+stackBoard(open);
-  // default home dashboard
-  h+=crewSpeedCard();
-  h+=attentionLine(open);
-  h+=busiestOffices(open);
+  // default home command-center
+  h+='<div class="twowin">'+attentionLine(open)+crewSpeedCard()+'</div>';
+  h+=officeRankWindow(open);
+  h+='<div class="secthead" style="margin-top:16px">All requests · across every office</div>';
+  h+=boardModeToggle()+stackBoard(open);
+  return h;
+}
+
+// collapsible "which office needs the most work" window
+function officeRankWindow(open){
+  const byOff={}; open.forEach(i=>{ if(i.office) byOff[i.office]=(byOff[i.office]||0)+1; });
+  const rows=Object.keys(byOff).map(o=>({o:o,n:byOff[o]})).sort((a,b)=>b.n-a.n);
+  const isOpen=!!openSecs['__officerank'];
+  const top=rows.length?rows[0]:null;
+  let h='<div class="sec'+(isOpen?'':' col')+'" style="margin-top:14px">'+
+    '<div class="sechead" data-sec="__officerank"><span class="cw s-rank"></span>'+
+    '<span class="snm">Which office needs the most work</span>'+
+    '<span class="sct">'+(top?esc(top.o)+' · '+top.n:'0')+'</span><span class="cv">▾</span></div>'+
+    '<div class="cards">';
+  if(!rows.length){ h+='<div class="none">No open requests anywhere. 🎉</div>'; }
+  else { const max=rows[0].n;
+    h+='<div class="panel" style="margin-top:2px">';
+    rows.forEach((r,idx)=>{ const pct=Math.max(Math.round(r.n/max*100),8);
+      h+='<div class="orow" data-goff="'+esc(r.o)+'"><div class="rank">'+(idx+1)+'</div><div class="obar-wrap">'+
+         '<div class="obar-top"><span class="oname">'+esc(r.o)+'</span><span class="ocount"><b>'+r.n+'</b> open</span></div>'+
+         '<div class="obar"><i style="width:'+pct+'%"></i></div></div></div>';
+    });
+    h+='</div>';
+  }
+  h+='</div></div>';
   return h;
 }
 
