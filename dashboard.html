@@ -47,6 +47,16 @@
   .kcard .ag{font-size:.7rem;color:var(--muted);white-space:nowrap;} .kcard .ag.old{color:var(--high);font-weight:700;}
   .kcard .pr{font-size:.82rem;color:#39434d;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   .kcard .off{font-size:.71rem;color:var(--muted);font-weight:700;margin-top:3px;}
+  .kpill{font-size:.64rem;font-weight:800;padding:2px 8px;border-radius:999px;white-space:nowrap;flex:0 0 auto;}
+  .kpill.high{background:#FDECEC;color:#C42B30;} .kpill.medium{background:#FDF1DD;color:#9A5E08;} .kpill.low{background:#EEF1F4;color:#48555F;}
+  .kcard .off .oldtxt{color:var(--high);font-weight:800;}
+  .sortrow{margin:2px 0 12px;}
+  .seg{display:inline-flex;gap:4px;background:#e7edf0;border:1px solid var(--line);border-radius:11px;padding:4px;}
+  .seg button{border:none;background:none;color:var(--navy);font-weight:800;font-size:.8rem;padding:7px 16px;border-radius:8px;cursor:pointer;}
+  .seg button.on{background:var(--navy);color:#fff;}
+  .col.high{background:#FBECEC;} .col.medium{background:#FBF1E4;} .col.low{background:#eef2f4;}
+  .col.high .ch .t{color:#C42B30;} .col.medium .ch .t{color:#9A5E08;} .col.low .ch .t{color:#48555F;}
+  .stag{display:inline-block;font-size:.62rem;font-weight:800;color:#0B5A62;background:#E4F1F2;border-radius:999px;padding:1px 8px;margin-left:6px;vertical-align:middle;}
   .dupbtn{display:inline-flex;align-items:center;gap:8px;background:#FDECEC;border:1px solid #f3b6b8;color:#9b2226;border-radius:999px;padding:8px 14px;font-weight:800;font-size:.86rem;cursor:pointer;margin-bottom:12px;}
   .dupwrap{background:var(--surface);border:1px solid #f3b6b8;border-radius:12px;padding:11px;margin-bottom:12px;}
   .dupwrap .h{font-weight:800;font-size:.86rem;color:#9b2226;margin-bottom:7px;}
@@ -140,11 +150,12 @@ const OFFICES=['Alamo Ranch','Braun','Bulverde','Cibolo','Forum','Leon Springs',
 const CREW=['Adrian Ellenwood','Maintenance Tech 1','Maintenance Tech 2'];
 const STATUSES=['New','In progress','Pending','Part ordered','Fixed'];
 const FLOW=['New','In progress','Pending','Part ordered'];
+const PRILABEL={high:'High',medium:'Medium',low:'Low'};
 const API='/.netlify/functions/airtable';
 const $=s=>document.querySelector(s);
 const rank={high:0,medium:1,low:2,'':3};
 const MS=86400000;
-let issues=[], log=[], parts=[], tab='board', filter='open', selOffice=null;
+let issues=[], log=[], parts=[], tab='board', filter='open', selOffice=null, sortMode='priority';
 let pendingPhoto=null;
 let dismissed={}, showDupes=false, showOfficeDupes=false;
 
@@ -200,10 +211,35 @@ function viewBoard(open,high,parts,dupes,dupeCount){
   if(showDupes){ return h+dupeSection(dupes,'across all offices'); }
   let pool=open;
   if(filter==='high') pool=high;
-  let statuses=FLOW;
-  if(filter==='part') statuses=['Part ordered'];
-  h+='<div class="hint">Swipe across to move through New → In progress → Pending → Part ordered.</div>';
-  h+=kanban(pool,statuses);
+  if(filter==='part') pool=parts;
+  h+=sortToggle();
+  if(sortMode==='priority'){ h+=boardHint('priority'); h+=priorityColumns(pool); }
+  else { h+=boardHint('date'); h+=kanban(pool, filter==='part'?['Part ordered']:FLOW); }
+  return h;
+}
+function sortToggle(){
+  return '<div class="sortrow"><div class="seg">'+
+    '<button class="'+(sortMode==='priority'?'on':'')+'" data-sort="priority">Priority</button>'+
+    '<button class="'+(sortMode==='date'?'on':'')+'" data-sort="date">Date</button></div></div>';
+}
+function boardHint(mode){
+  return '<div class="hint">'+(mode==='priority'
+    ? 'By priority — swipe across High · Medium · Low.'
+    : 'By status — swipe across New → In progress → Pending → Part ordered.')+'</div>';
+}
+function priorityColumns(list){
+  const order=[['high','High'],['medium','Medium'],['low','Low']];
+  let h='<div class="board">';
+  order.forEach(pair=>{ const key=pair[0], label=pair[1];
+    const items=list.filter(i=>(i.impact||'')===key).sort(byOldest);
+    h+='<div class="col '+key+'"><div class="ch"><span class="t">'+label+'</span><span class="n">'+items.length+'</span></div>';
+    if(items.length) items.forEach(i=>h+=kcard(i,true)); else h+='<div class="none">—</div>';
+    h+='</div>';
+  });
+  const none=list.filter(i=>!i.impact);
+  if(none.length){ h+='<div class="col"><div class="ch"><span class="t">No priority</span><span class="n">'+none.length+'</span></div>';
+    none.sort(byOldest).forEach(i=>h+=kcard(i,true)); h+='</div>'; }
+  h+='</div>';
   return h;
 }
 
@@ -218,12 +254,15 @@ function kanban(list,statuses){
   h+='</div>';
   return h;
 }
-function kcard(i){
+function kcard(i,showStatus){
   const n=daysAgo(i.date); const old=n!=null&&n>=14;
+  const pri=(i.impact&&PRILABEL[i.impact])?'<span class="kpill '+i.impact+'">'+PRILABEL[i.impact]+'</span>':'';
+  const stag=showStatus?'<span class="stag">'+esc(i.status)+'</span>':'';
+  const ageHtml=(n!=null)?' · <span'+(old?' class="oldtxt"':'')+'>'+ageStr(n)+'</span>':'';
   return '<div class="kcard '+(i.impact||'')+'" data-id="'+i.id+'">'+
-    '<div class="l"><span class="chair">'+esc(i.chair||'—')+'</span><span class="ag'+(old?' old':'')+'">'+ageStr(n)+'</span></div>'+
+    '<div class="l"><span class="chair">'+esc(i.chair||'—')+stag+'</span>'+pri+'</div>'+
     '<div class="pr">'+esc(i.problem)+'</div>'+
-    '<div class="off">'+esc(i.office)+(i.date?' · submitted '+fmt(i.date):'')+'</div></div>';
+    '<div class="off">'+esc(i.office)+(i.date?' · submitted '+fmt(i.date):'')+ageHtml+'</div></div>';
 }
 
 function dupeSection(clusters,scope){
@@ -278,8 +317,9 @@ function viewOffices(){
   if(oCount){ h+='<div class="dupbtn" data-officedupes="1">⚠︎ '+oCount+' possible duplicates here — '+(showOfficeDupes?'hide':'review')+'</div>'; }
   if(showOfficeDupes && oCount){ h+=dupeSection(oClusters, 'at '+selOffice); }
   if(!ongoing.length){ h+='<div class="empty">Nothing open at '+esc(selOffice)+'. 🎉</div>'; return h; }
-  h+='<div class="hint">Swipe across the statuses.</div>';
-  h+=kanban(ongoing,FLOW);
+  h+=sortToggle();
+  if(sortMode==='priority'){ h+=boardHint('priority'); h+=priorityColumns(ongoing); }
+  else { h+=boardHint('date'); h+=kanban(ongoing,FLOW); }
   return h;
 }
 
@@ -288,6 +328,7 @@ function wire(){
   $('#wrap').querySelectorAll('[data-f]').forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); const f=c.dataset.f;
     if(f==='dupes'){ showDupes=!showDupes; } else { showDupes=false; filter=f; }
     render(); });
+  $('#wrap').querySelectorAll('[data-sort]').forEach(c=>c.onclick=()=>{ sortMode=c.dataset.sort; render(); });
   $('#wrap').querySelectorAll('[data-o]').forEach(c=>c.onclick=()=>{ selOffice=c.dataset.o; showOfficeDupes=false; render(); });
   $('#wrap').querySelectorAll('[data-back]').forEach(c=>c.onclick=()=>{ selOffice=null; showOfficeDupes=false; render(); });
   $('#wrap').querySelectorAll('[data-officedupes]').forEach(c=>c.onclick=()=>{ showOfficeDupes=!showOfficeDupes; render(); });
