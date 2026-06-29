@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.06.29-manage -->
+<!-- BUILD STAMP: v2026.06.29-crew -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -111,6 +111,35 @@
   .ocard .ct .d{width:7px;height:7px;border-radius:50%;background:var(--low);}
   .ocard .ct .d.hi{background:var(--high);}
   .ocard.clear .ct{color:var(--green);}
+  .stat.parts b{color:var(--med);}
+  .speedcard{display:flex;align-items:baseline;gap:12px;background:linear-gradient(135deg,#eef8f0,#e3f3ea);border:1px solid #cfe9d8;border-radius:14px;padding:14px 16px;margin-bottom:14px;}
+  .speedcard b{font-size:1.5rem;color:var(--green);line-height:1;white-space:nowrap;}
+  .speedcard span{font-size:.8rem;color:#3d6b50;font-weight:700;line-height:1.3;}
+  .speedcard .sub2{font-weight:600;color:#5a8068;font-size:.72rem;}
+  .speedcard.empty2{background:#f6f8fa;border-color:var(--line);} .speedcard.empty2 b{color:var(--muted);} .speedcard.empty2 span{color:var(--muted);}
+  .attn{display:flex;gap:11px;align-items:center;background:#FFF6F6;border:1px solid #f3c9cb;border-radius:14px;padding:12px 14px;margin-bottom:16px;cursor:pointer;}
+  .attn .ico{font-size:1.05rem;flex:0 0 auto;}
+  .attn .t{font-size:.85rem;color:#9a2a2e;font-weight:700;line-height:1.35;}
+  .attn .t b{color:#7d1d21;} .attn .t .sm{display:block;font-weight:600;font-size:.72rem;color:#a8595c;margin-top:2px;}
+  .attn.calm{background:#eef8f0;border-color:#cfe9d8;} .attn.calm .t{color:#3d6b50;} .attn.calm .ico{color:var(--green);}
+  .secthead{font-weight:800;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:4px 2px 9px;}
+  .orow{display:flex;align-items:center;gap:11px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .orow:last-child{border-bottom:none;}
+  .orow .rank{width:18px;text-align:center;font-weight:800;color:var(--low);font-size:.88rem;}
+  .orow .obar-wrap{flex:1;min-width:0;}
+  .orow .obar-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;gap:8px;}
+  .orow .oname{font-weight:800;color:var(--ink);font-size:.94rem;}
+  .orow .ocount{font-size:.8rem;color:var(--muted);font-weight:700;white-space:nowrap;} .orow .ocount b{color:var(--ink);}
+  .obar{height:7px;border-radius:99px;background:#eef2f5;overflow:hidden;}
+  .obar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--navy),var(--blue));}
+  .pstrip{background:#FBF6EE;border:1px solid #ecdcc2;border-radius:12px;padding:11px 14px;font-size:.85rem;color:#7a5a23;font-weight:700;margin-bottom:12px;}
+  .pstrip b{color:#5e441a;}
+  .pnote{font-size:.74rem;color:var(--muted);margin:0 2px 12px;line-height:1.4;}
+  .prow2{display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .prow2:last-child{border-bottom:none;}
+  .prow2 .pl{flex:1;min-width:0;} .prow2 .pn{font-weight:800;color:var(--ink);font-size:.92rem;}
+  .prow2 .pm{font-size:.76rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .prow2 .po b{color:var(--high);font-size:1rem;white-space:nowrap;}
   .backbtn{display:inline-flex;align-items:center;gap:5px;background:none;border:none;color:var(--navy);font-weight:800;font-size:.9rem;cursor:pointer;padding:4px 2px;margin-bottom:6px;}
   .ohead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px;}
   .ohead .nm{font-size:1.08rem;font-weight:800;}
@@ -183,7 +212,7 @@
   </div>
   <div class="tabs" id="tabs">
     <button data-t="board" class="on">Request</button>
-    <button data-t="recent">Recent</button>
+    <button data-t="recent">Daily Activity</button>
     <button data-t="offices">Offices</button>
     <button data-t="warehouse">Warehouse</button>
     <button data-t="manage">Manage</button>
@@ -206,7 +235,7 @@ const API='/.netlify/functions/airtable';
 const $=s=>document.querySelector(s);
 const rank={high:0,medium:1,low:2,'':3};
 const MS=86400000;
-let issues=[], log=[], parts=[], tab='board', filter='open', selOffice=null, sortMode='priority';
+let issues=[], log=[], parts=[], tab='board', filter='', selOffice=null, sortMode='priority';
 let pendingPhoto=null;
 let whMode='order', whSearch='';
 let dismissed={}, showDupes=false, showOfficeDupes=false;
@@ -258,12 +287,10 @@ $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{ tab=b.dataset.t
 function render(){
   try{
     const open=issues.filter(isOpen);
-    const high=open.filter(i=>i.impact==='high');
-    const parts=open.filter(i=>i.status==='Part ordered');
-    const dupes=clustersIn(issues); let dupeCount=0; dupes.forEach(g=>dupeCount+=g.length);
-    $('#sub').textContent=open.length+' open · '+high.length+' high';
+    const partsWait=open.filter(i=>i.status==='Part ordered');
+    $('#sub').textContent=open.length+' open'+(partsWait.length?' · '+partsWait.length+' on parts':'');
     let body='';
-    if(tab==='board') body=viewBoard(open,high,parts,dupes,dupeCount);
+    if(tab==='board') body=viewBoard(open);
     else if(tab==='recent') body=viewRecent();
     else if(tab==='warehouse') body=viewWarehouse();
     else if(tab==='manage') body=viewManage();
@@ -272,21 +299,106 @@ function render(){
   }catch(e){ $('#wrap').innerHTML='<div class="empty">Something went wrong drawing this view.<br><span class="muted">'+esc(e.message||'')+'</span></div>'; }
 }
 
-function statTile(key,n,label,cls){ return '<div class="stat'+(filter===key&&!showDupes?' on':'')+(key==='dupes'&&showDupes?' on':'')+(cls?' '+cls:'')+'" data-f="'+key+'"><b>'+n+'</b><span>'+label+'</span></div>'; }
+function statTile(key,n,label,cls){ return '<div class="stat'+(filter===key?' on':'')+(cls?' '+cls:'')+'" data-f="'+key+'"><b>'+n+'</b><span>'+label+'</span></div>'; }
 
-function viewBoard(open,high,parts,dupes,dupeCount){
+function viewBoard(open){
+  const partsWait=open.filter(i=>i.status==='Part ordered');
+  const dupes=clustersIn(issues); let dupeCount=0; dupes.forEach(g=>dupeCount+=g.length);
   let h='<div class="stats">'+
-    statTile('open',open.length,'Open')+statTile('high',high.length,'High')+
-    statTile('part',parts.length,'On parts')+statTile('dupes',dupeCount,'Dupes','dupe')+'</div>';
-  if(showDupes){ return h+dupeSection(dupes,'across all offices'); }
-  let pool=open;
-  if(filter==='high') pool=high;
-  if(filter==='part') pool=parts;
-  h+=sortToggle();
-  if(sortMode==='priority'){ h+=boardHint('priority'); h+=priorityColumns(pool); }
-  else { h+=boardHint('date'); h+=kanban(pool, filter==='part'?['Part ordered']:FLOW); }
+    statTile('open',open.length,'Open')+
+    statTile('parts',partsWait.length,'Waiting on parts','parts')+
+    statTile('dupes',dupeCount,'Duplicates','dupe')+'</div>';
+  if(filter==='parts') return h+partsWindow(partsWait);
+  if(filter==='dupes') return h+(dupeCount?dupeSection(dupes,'across all offices'):'<div class="empty">No duplicates right now. 👍</div>');
+  if(filter==='open') return h+boardHint('date')+kanban(open,FLOW);
+  // default home dashboard
+  h+=crewSpeedCard();
+  h+=attentionLine(open);
+  h+=busiestOffices(open);
   return h;
 }
+
+// requests that EVER went to "Part ordered" (so we can exclude them from crew speed)
+function everWaitedOnParts(id){
+  if(everWaitedOnParts._c && everWaitedOnParts._c[id]!==undefined) return everWaitedOnParts._c[id];
+  return false;
+}
+function buildPartsHistory(){
+  const ever={}, orderedOn={};
+  log.forEach(l=>{ if(/part ordered/i.test(l.note||'')){ ever[l.issueId]=true;
+    if(l.date && (!orderedOn[l.issueId] || (dObj(l.date)&&dObj(orderedOn[l.issueId])&&dObj(l.date)>dObj(orderedOn[l.issueId])))) orderedOn[l.issueId]=l.date; } });
+  everWaitedOnParts._c=ever; buildPartsHistory._ordered=orderedOn;
+}
+
+function crewSpeedCard(){
+  buildPartsHistory();
+  const now=today0(); const cutoff=new Date(now); cutoff.setDate(cutoff.getDate()-90);
+  let days=[];
+  issues.forEach(i=>{
+    if(i.status!=='Fixed' || !i.fixed || !i.date) return;
+    const fx=dObj(i.fixed), rp=dObj(i.date); if(!fx||!rp) return;
+    if(fx<cutoff) return;                       // last 90 days only
+    if(everWaitedOnParts(i.id)) return;         // parts-waiters don't count
+    const d=Math.round((fx-rp)/MS); if(d>=0) days.push(d);
+  });
+  if(!days.length) return '<div class="speedcard empty2"><b>—</b><span>No fixed requests yet to measure crew speed.<br><span class="sub2">This fills in as jobs get marked fixed.</span></span></div>';
+  const avg=days.reduce((a,b)=>a+b,0)/days.length;
+  const txt=avg<1?'< 1 day':(avg.toFixed(avg<10?1:0)+(avg<2?' day':' days'));
+  return '<div class="speedcard"><b>'+txt+'</b><span>Average time to fix · last 90 days<br>'+
+    '<span class="sub2">parts-waiting jobs not counted · '+days.length+' job'+(days.length===1?'':'s')+'</span></span></div>';
+}
+
+function attentionLine(open){
+  const actionable=open.filter(i=>i.status!=='Part ordered');
+  if(!actionable.length) return '<div class="attn calm"><span class="ico">✓</span><span class="t">All caught up — nothing aging that needs attention.</span></div>';
+  let oldest=null, oldestAge=-1;
+  actionable.forEach(i=>{ const a=daysAgo(i.date); if(a!=null && a>oldestAge){ oldestAge=a; oldest=i; } });
+  if(!oldest) return '';
+  return '<div class="attn" data-id="'+oldest.id+'"><span class="ico">⏱️</span><span class="t">Needs attention: <b>'+
+    esc(oldest.office)+(oldest.chair?' — '+esc(oldest.chair):'')+'</b>, open <b>'+ageStr(oldestAge)+'</b>'+
+    '<span class="sm">Oldest request that\u2019s not waiting on parts</span></span></div>';
+}
+
+function busiestOffices(open){
+  const byOff={}; open.forEach(i=>{ if(i.office) byOff[i.office]=(byOff[i.office]||0)+1; });
+  const rows=Object.keys(byOff).map(o=>({o:o,n:byOff[o]})).sort((a,b)=>b.n-a.n);
+  if(!rows.length) return '<div class="empty">No open requests anywhere. 🎉</div>';
+  const max=rows[0].n;
+  let h='<div class="secthead">Busiest offices right now</div><div class="panel">';
+  rows.forEach((r,idx)=>{ const pct=Math.max(Math.round(r.n/max*100),8);
+    h+='<div class="orow" data-goff="'+esc(r.o)+'"><div class="rank">'+(idx+1)+'</div><div class="obar-wrap">'+
+       '<div class="obar-top"><span class="oname">'+esc(r.o)+'</span><span class="ocount"><b>'+r.n+'</b> open</span></div>'+
+       '<div class="obar"><i style="width:'+pct+'%"></i></div></div></div>';
+  });
+  h+='</div>';
+  return h;
+}
+
+function latestNoteFor(id){
+  let best='', bd=null;
+  log.forEach(l=>{ if(l.issueId===id && l.note && !/^\(same job\)/i.test(l.note) && !/^status changed/i.test(l.note)){
+    const d=dObj(l.date); if(!bd||(d&&d>=bd)){ bd=d; best=l.note; } } });
+  return best;
+}
+
+function partsWindow(list){
+  if(!list.length) return '<div class="empty">Nothing is waiting on parts right now. 👍</div>';
+  buildPartsHistory(); const orderedOn=buildPartsHistory._ordered||{};
+  const rows=list.map(i=>{ const od=orderedOn[i.id]||i.date; const w=daysAgo(od); return {i:i, wait:(w==null?0:w)}; })
+                 .sort((a,b)=>b.wait-a.wait);
+  const longest=rows[0].wait; const over2wk=rows.filter(r=>r.wait>14).length;
+  let h='<div class="pstrip">'+list.length+' waiting on parts · longest <b>'+longest+'d</b>'+(over2wk?(' · <b>'+over2wk+'</b> over 2 weeks'):'')+'</div>';
+  h+='<div class="pnote">Tip: tap a request to add an update (e.g. \u201cpart backordered\u201d) — the office sees it on their screen. A list of which part types take longest will build here as you order parts in the app.</div>';
+  h+='<div class="secthead">Waiting on parts · longest first</div><div class="panel">';
+  rows.forEach(r=>{ const latest=latestNoteFor(r.i.id);
+    h+='<div class="prow2" data-id="'+r.i.id+'"><div class="pl"><div class="pn">'+esc(r.i.office)+(r.i.chair?' — '+esc(r.i.chair):'')+'</div>'+
+       '<div class="pm">'+esc((r.i.problem||'').slice(0,70))+(latest?' · '+esc(latest.slice(0,40)):'')+'</div></div>'+
+       '<div class="po"><b>'+r.wait+'d</b></div></div>';
+  });
+  h+='</div>';
+  return h;
+}
+
 function sortToggle(){
   return '<div class="sortrow"><div class="seg">'+
     '<button class="'+(sortMode==='priority'?'on':'')+'" data-sort="priority">Priority</button>'+
@@ -650,8 +762,7 @@ function viewOffices(){
 function wire(){
   $('#wrap').querySelectorAll('[data-id]').forEach(c=>{ if(c.dataset.id) c.onclick=()=>openDetail(c.dataset.id); });
   $('#wrap').querySelectorAll('[data-f]').forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); const f=c.dataset.f;
-    if(f==='dupes'){ showDupes=!showDupes; } else { showDupes=false; filter=f; }
-    render(); });
+    filter=(filter===f?'':f); render(); });
   $('#wrap').querySelectorAll('[data-sort]').forEach(c=>c.onclick=()=>{ sortMode=c.dataset.sort; render(); });
   $('#wrap').querySelectorAll('[data-wh]').forEach(c=>c.onclick=()=>{ whMode=c.dataset.wh; render(); });
   $('#wrap').querySelectorAll('[data-part]').forEach(c=>c.onclick=()=>openPart(c.dataset.part));
@@ -663,6 +774,8 @@ function wire(){
   if(ws){ ws.oninput=()=>{ const pos=ws.selectionStart; whSearch=ws.value; render();
     const n=document.getElementById('wh-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }
   $('#wrap').querySelectorAll('[data-o]').forEach(c=>c.onclick=()=>{ selOffice=c.dataset.o; showOfficeDupes=false; render(); });
+  $('#wrap').querySelectorAll('[data-goff]').forEach(c=>c.onclick=()=>{ tab='offices'; selOffice=c.dataset.goff; showOfficeDupes=false; filter='';
+    $('#tabs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.t==='offices')); render(); });
   $('#wrap').querySelectorAll('[data-back]').forEach(c=>c.onclick=()=>{ selOffice=null; showOfficeDupes=false; render(); });
   $('#wrap').querySelectorAll('[data-officedupes]').forEach(c=>c.onclick=()=>{ showOfficeDupes=!showOfficeDupes; render(); });
   $('#wrap').querySelectorAll('[data-dismiss]').forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); dismissed[c.dataset.dismiss]=true; render(); });
