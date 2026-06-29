@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
+<!-- BUILD STAMP: v2026.06.29-warehouse -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -69,6 +70,13 @@
   .prow .po.ord{background:var(--navy);color:#fff;border-radius:999px;padding:6px 12px;font-size:.78rem;font-weight:800;}
   .lowtag{display:inline-block;font-size:.6rem;font-weight:800;color:#C42B30;background:#FDECEC;border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle;}
   .whsearch{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:11px;font-size:1rem;box-sizing:border-box;margin-bottom:6px;}
+  .addpart-wide{width:100%;background:#fff;border:1.5px dashed var(--navy);color:var(--navy);border-radius:12px;padding:12px;font-size:.92rem;font-weight:800;cursor:pointer;margin-bottom:12px;}
+  .addpart-wide:active{background:#f3f8ff;}
+  .po.ontag{background:#FBF1E4;color:#9A5E08;border-radius:999px;padding:6px 12px;font-size:.76rem;font-weight:800;}
+  .ontag2{display:inline-block;font-size:.6rem;font-weight:800;color:#9A5E08;background:#FBF1E4;border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle;}
+  .partstat{display:flex;gap:18px;font-size:.9rem;color:var(--muted);margin-bottom:14px;}
+  .partstat b{color:var(--ink);} .partstat b.lown{color:var(--high);}
+  .onorderbox{background:#FBF1E4;border:1px solid #e8cfa3;color:#9A5E08;border-radius:10px;padding:10px 12px;font-weight:700;font-size:.88rem;margin-bottom:4px;}
   .dupbtn{display:inline-flex;align-items:center;gap:8px;background:#FDECEC;border:1px solid #f3b6b8;color:#9b2226;border-radius:999px;padding:8px 14px;font-weight:800;font-size:.86rem;cursor:pointer;margin-bottom:12px;}
   .dupwrap{background:var(--surface);border:1px solid #f3b6b8;border-radius:12px;padding:11px;margin-bottom:12px;}
   .dupwrap .h{font-weight:800;font-size:.86rem;color:#9b2226;margin-bottom:7px;}
@@ -351,25 +359,36 @@ function actRow(e){ const i=e.i,id=i?i.id:''; let b='',s='';
   return '<div class="act" data-id="'+id+'"><span class="adot '+e.kind+'"></span><div><div class="b">'+b+'</div><div class="s">'+s+'</div></div></div>'; }
 
 function viewWarehouse(){
-  const toOrder=parts.filter(p=>p.orderNow);
+  const onWay=parts.filter(p=>p.onOrder>0);
+  const toOrder=parts.filter(p=>p.orderNow && !(p.onOrder>0));
   let h='<div class="sortrow"><div class="seg">'+
     '<button class="'+(whMode==='order'?'on':'')+'" data-wh="order">To order'+(toOrder.length?' ('+toOrder.length+')':'')+'</button>'+
     '<button class="'+(whMode==='inv'?'on':'')+'" data-wh="inv">Inventory</button></div></div>';
-  h+=(whMode==='order')?warehouseOrder(toOrder):warehouseInventory();
+  h+='<button class="addpart-wide" id="wh-addpart">+ Add a part</button>';
+  h+=(whMode==='order')?warehouseOrder(toOrder,onWay):warehouseInventory();
   return h;
 }
-function warehouseOrder(list){
+function warehouseOrder(list,onWay){
   if(!parts.length) return '<div class="empty">Warehouse is empty — no parts loaded yet.</div>';
-  if(!list.length) return '<div class="empty">Nothing to order today — every part is above its level. 👍</div>';
-  const byV={};
-  list.forEach(p=>{ const v=p.vendor||'No vendor'; (byV[v]=byV[v]||[]).push(p); });
-  let h='<div class="hint">Parts at or below the level you keep on the shelf, grouped by supplier. \u201cOrder\u201d = brings it back up to your target.</div>';
+  let h='';
+  if(onWay && onWay.length){
+    h+='<div class="vhdr" style="color:var(--med)">On the way<span class="vn">'+onWay.length+'</span></div>';
+    onWay.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(p=>{
+      h+='<div class="prow" data-part="'+esc(p.number)+'">'+
+        '<div class="pl"><div class="pn">'+esc(p.name)+'</div>'+
+        '<div class="pm">#'+esc(p.number)+' · on hand '+esc(p.inStock)+(p.orderDate?' · ordered '+fmt(p.orderDate):'')+'</div></div>'+
+        '<div class="po ontag">'+esc(p.onOrder)+' ordered</div></div>';
+    });
+  }
+  if(!list.length){ return h + (onWay&&onWay.length ? '<div class="empty" style="padding:16px">Nothing else to order. 👍</div>' : '<div class="empty">Nothing to order today — every part is above its level. 👍</div>'); }
+  h+='<div class="hint">At or below the level you keep on the shelf, grouped by supplier. Tap a part to order it.</div>';
+  const byV={}; list.forEach(p=>{ const v=p.vendor||'No vendor'; (byV[v]=byV[v]||[]).push(p); });
   Object.keys(byV).sort().forEach(v=>{
     const items=byV[v].sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     h+='<div class="vhdr">'+esc(v)+'<span class="vn">'+items.length+'</span></div>';
     items.forEach(p=>{
       const sug=(typeof p.max==='number')?Math.max(p.max-p.inStock,1):'';
-      h+='<div class="prow low">'+
+      h+='<div class="prow low" data-part="'+esc(p.number)+'">'+
         '<div class="pl"><div class="pn">'+esc(p.name)+'</div>'+
         '<div class="pm">#'+esc(p.number)+' · on hand '+esc(p.inStock)+' · floor '+esc(p.reorderAt)+(p.bin?' · bin '+esc(p.bin):'')+'</div></div>'+
         '<div class="po ord">'+(sug!==''?'order ~'+sug:'order')+'</div></div>';
@@ -382,15 +401,105 @@ function warehouseInventory(){
   const q=whSearch.trim().toLowerCase();
   let list=parts.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   if(q) list=list.filter(p=>((p.name||'')+' '+(p.number||'')+' '+(p.vendor||'')+' '+(p.bin||'')).toLowerCase().indexOf(q)>=0);
-  h+='<div class="hint">'+list.length+(q?' match'+(list.length===1?'':'es'):' parts')+'.</div>';
+  h+='<div class="hint">'+list.length+(q?' match'+(list.length===1?'':'es'):' parts')+'. Tap a part to order, receive, or fix the count.</div>';
   if(!list.length) return h+'<div class="empty">No parts match.</div>';
   list.forEach(p=>{
-    h+='<div class="prow'+(p.orderNow?' low':'')+'">'+
-      '<div class="pl"><div class="pn">'+esc(p.name)+(p.orderNow?' <span class="lowtag">low</span>':'')+'</div>'+
+    h+='<div class="prow'+(p.orderNow?' low':'')+'" data-part="'+esc(p.number)+'">'+
+      '<div class="pl"><div class="pn">'+esc(p.name)+(p.orderNow?' <span class="lowtag">low</span>':'')+(p.onOrder>0?' <span class="ontag2">'+esc(p.onOrder)+' on order</span>':'')+'</div>'+
       '<div class="pm">#'+esc(p.number)+' · '+esc(p.vendor||'—')+(p.bin?' · bin '+esc(p.bin):'')+'</div></div>'+
       '<div class="po"><b>'+esc(p.inStock)+'</b><span> / '+esc(p.reorderAt)+'</span></div></div>';
   });
   return h;
+}
+function openPart(number){
+  const p=partByNumber(number); if(!p) return;
+  const sug=(typeof p.max==='number')?Math.max(p.max-p.inStock,1):'';
+  let h='<div class="grab"></div>'+
+    '<h2 style="margin:0 0 4px">'+esc(p.name)+'</h2>'+
+    '<div class="muted" style="margin-bottom:12px">#'+esc(p.number)+' · '+esc(p.vendor||'—')+(p.bin?' · bin '+esc(p.bin):'')+'</div>'+
+    '<div class="partstat"><span>on hand <b'+(p.orderNow?' class="lown"':'')+'>'+esc(p.inStock)+'</b></span><span>min <b>'+esc(p.reorderAt)+'</b></span>'+(typeof p.max==='number'?'<span>max <b>'+esc(p.max)+'</b></span>':'')+'</div>';
+  if(p.onOrder>0){
+    h+='<div class="onorderbox">'+esc(p.onOrder)+' on order'+(p.orderDate?' · since '+fmt(p.orderDate):'')+'</div>'+
+       '<button class="primary-btn" id="pt-receive">Received \u2014 add '+esc(p.onOrder)+' to stock</button>';
+  } else {
+    h+='<label>Order quantity</label>'+
+       '<div class="twocol"><div><input id="pt-oqty" type="number" min="1" value="'+(sug!==''?esc(sug):'')+'"></div>'+
+       '<div><button class="primary-btn" style="margin-top:0" id="pt-order">Mark ordered</button></div></div>';
+  }
+  h+='<label style="margin-top:16px">Fix the on-hand count</label>'+
+     '<div class="twocol"><div><input id="pt-adj" type="number" min="0" placeholder="count" value="'+esc(p.inStock)+'"></div>'+
+     '<div><button class="primary-btn" style="margin-top:0;background:var(--navy)" id="pt-set">Set count</button></div></div>'+
+     '<button class="ghost-btn" id="pt-close">Done</button>';
+  $('#sheet').innerHTML=h;
+  const oq=document.getElementById('pt-order'); if(oq) oq.onclick=()=>doOrder(p.number);
+  const rc=document.getElementById('pt-receive'); if(rc) rc.onclick=()=>doReceive(p.number);
+  document.getElementById('pt-set').onclick=()=>doAdjust(p.number);
+  document.getElementById('pt-close').onclick=hide;
+  show();
+}
+async function doOrder(number){
+  const q=Number(document.getElementById('pt-oqty').value); if(!(q>0)){ document.getElementById('pt-oqty').focus(); return; }
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'order',number:number,qty:q})});
+    const d=await r.json(); if(d.error) throw new Error(d.error);
+    const p=partByNumber(number); if(p){ p.onOrder=q; p.orderDate=new Date().toISOString().slice(0,10); }
+    toast('Marked ordered'); openPart(number); render();
+  }catch(e){ toast('Could not save'); }
+}
+async function doReceive(number){
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'receive',number:number})});
+    const d=await r.json(); if(d.error) throw new Error(d.error);
+    const p=partByNumber(number); if(p){ p.inStock=(typeof p.inStock==='number'?p.inStock:0)+(p.onOrder||0); p.onOrder=0;
+      p.orderNow=(typeof p.inStock==='number'&&typeof p.reorderAt==='number'&&p.inStock<=p.reorderAt); }
+    toast('Received into stock'); openPart(number); render();
+  }catch(e){ toast('Could not save'); }
+}
+async function doAdjust(number){
+  const v=Number(document.getElementById('pt-adj').value); if(isNaN(v)||v<0){ document.getElementById('pt-adj').focus(); return; }
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'adjust',number:number,inStock:v})});
+    const d=await r.json(); if(d.error) throw new Error(d.error);
+    const p=partByNumber(number); if(p){ p.inStock=Math.round(v); p.orderNow=(typeof p.reorderAt==='number'&&p.inStock<=p.reorderAt); }
+    toast('Count updated'); openPart(number); render();
+  }catch(e){ toast('Could not save'); }
+}
+
+function openAddPart(){
+  $('#sheet').innerHTML='<div class="grab"></div>'+
+    '<h2 style="margin:0 0 10px">Add a part</h2>'+
+    '<label>Part number *</label><input id="np-num" placeholder="e.g. 5150">'+
+    '<label>Part name *</label><input id="np-name" placeholder="What it is">'+
+    '<label>Shelf / bin</label><input id="np-bin" placeholder="e.g. 1B">'+
+    '<div class="twocol" style="margin-top:0"><div><label>How many on hand</label><input id="np-stock" type="number" min="0" value="0"></div>'+
+    '<div><label>Minimum to keep</label><input id="np-min" type="number" min="0" value="0"></div></div>'+
+    '<div class="twocol"><div><label>Vendor (optional)</label><input id="np-vendor" placeholder="e.g. DCI"></div>'+
+    '<div><label>Max — full target (optional)</label><input id="np-max" type="number" min="0" placeholder="e.g. 10"></div></div>'+
+    '<div id="np-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="np-save">Add part</button>'+
+    '<button class="ghost-btn" id="np-close">Cancel</button>';
+  document.getElementById('np-save').onclick=doAddPart;
+  document.getElementById('np-close').onclick=hide;
+  show(); setTimeout(()=>document.getElementById('np-num').focus(),60);
+}
+async function doAddPart(){
+  const num=document.getElementById('np-num').value.trim();
+  const name=document.getElementById('np-name').value.trim();
+  const err=document.getElementById('np-err');
+  if(!num || !name){ err.textContent='Part number and name are required.'; return; }
+  if(partByNumber(num)){ err.textContent='A part with number '+num+' already exists.'; return; }
+  const payload={action:'addpart', number:num, name:name,
+    bin:document.getElementById('np-bin').value.trim(),
+    vendor:document.getElementById('np-vendor').value.trim(),
+    inStock:document.getElementById('np-stock').value,
+    reorderAt:document.getElementById('np-min').value,
+    max:document.getElementById('np-max').value };
+  const btn=document.getElementById('np-save'); btn.disabled=true; btn.textContent='Adding…';
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not add');
+    const inS=Math.max(Math.round(Number(payload.inStock)||0),0), ra=Math.max(Math.round(Number(payload.reorderAt)||0),0);
+    const mx=(payload.max!==''&&!isNaN(Number(payload.max)))?Math.max(Math.round(Number(payload.max)),0):'';
+    parts.push({id:d.id||('tmp'+Date.now()),name:name,number:num,inStock:inS,reorderAt:ra,max:mx,
+      bin:payload.bin,vendor:payload.vendor,onOrder:0,orderDate:'',orderNow:(inS<=ra)});
+    toast('Part added'); hide(); render();
+  }catch(e){ btn.disabled=false; btn.textContent='Add part'; err.textContent=String(e.message||'Could not add'); }
 }
 
 function viewOffices(){
@@ -427,6 +536,8 @@ function wire(){
     render(); });
   $('#wrap').querySelectorAll('[data-sort]').forEach(c=>c.onclick=()=>{ sortMode=c.dataset.sort; render(); });
   $('#wrap').querySelectorAll('[data-wh]').forEach(c=>c.onclick=()=>{ whMode=c.dataset.wh; render(); });
+  $('#wrap').querySelectorAll('[data-part]').forEach(c=>c.onclick=()=>openPart(c.dataset.part));
+  const ap=document.getElementById('wh-addpart'); if(ap) ap.onclick=openAddPart;
   const ws=document.getElementById('wh-search');
   if(ws){ ws.oninput=()=>{ const pos=ws.selectionStart; whSearch=ws.value; render();
     const n=document.getElementById('wh-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }
