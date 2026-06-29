@@ -98,6 +98,17 @@
   input,textarea,select{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:11px;font-size:1rem;font-family:inherit;color:var(--ink);background:var(--surface);}
   textarea{min-height:64px;resize:vertical;}
   .twocol{display:flex;gap:8px;} .twocol>div{flex:1;}
+  .partrow{display:flex;gap:8px;margin-top:8px;align-items:center;}
+  .partrow .pnum{flex:1;min-width:0;} .partrow .pqty{width:72px;flex:0 0 auto;}
+  .partrow .prem{flex:0 0 auto;width:40px;border:1.5px solid var(--line);background:#fff;border-radius:10px;color:var(--muted);font-size:1.15rem;font-weight:800;cursor:pointer;line-height:1;padding:9px 0;}
+  .addpart-btn{margin-top:8px;background:none;border:none;color:var(--navy);font-weight:800;font-size:.86rem;cursor:pointer;padding:4px 2px;}
+  .partitem{margin-top:8px;} .partitem .partrow{margin-top:0;}
+  .pmeta{font-size:.76rem;color:var(--muted);margin:4px 2px 0;}
+  .pmeta b{color:var(--ink);font-weight:800;} .pmeta.bad{color:var(--high);}
+  .photochip{position:relative;display:inline-block;margin-top:4px;}
+  .photochip img{height:96px;border-radius:10px;border:1px solid var(--line);display:block;object-fit:cover;}
+  .photochip button{position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;border:none;background:var(--ink);color:#fff;font-weight:800;cursor:pointer;line-height:1;}
+  .notephoto{margin-top:6px;max-height:130px;border-radius:8px;border:1px solid var(--line);display:block;}
   .primary-btn{width:100%;margin-top:14px;background:var(--primary);color:#fff;border:none;border-radius:13px;padding:14px;font-size:1rem;font-weight:800;cursor:pointer;}
   .warn-btn{width:100%;margin-top:8px;background:#fff;border:1.5px solid var(--high);color:#C42B30;border-radius:13px;padding:12px;font-weight:800;cursor:pointer;}
   .ghost-btn{width:100%;margin-top:8px;background:none;border:none;color:var(--muted);padding:11px;font-weight:700;cursor:pointer;}
@@ -133,7 +144,8 @@ const API='/.netlify/functions/airtable';
 const $=s=>document.querySelector(s);
 const rank={high:0,medium:1,low:2,'':3};
 const MS=86400000;
-let issues=[], log=[], tab='board', filter='open', selOffice=null;
+let issues=[], log=[], parts=[], tab='board', filter='open', selOffice=null;
+let pendingPhoto=null;
 let dismissed={}, showDupes=false, showOfficeDupes=false;
 
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1900);}
@@ -158,7 +170,7 @@ function clustersIn(list){
 load();
 async function load(){
   try{ const r=await fetch(API); const d=await r.json(); if(d.error) throw new Error(d.error);
-    issues=d.issues||[]; log=d.worklog||[]; render();
+    issues=d.issues||[]; log=d.worklog||[]; parts=d.parts||[]; render();
   }catch(e){ $('#wrap').innerHTML='<div class="empty">Could not load.<br><span class="muted">'+esc(e.message||'')+'</span></div>'; }
 }
 $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{ tab=b.dataset.t; showDupes=false; selOffice=null; showOfficeDupes=false;
@@ -299,16 +311,26 @@ function openDetail(id){
     (twins.length?'<div class="dupbtn" style="margin-top:10px" id="d-twin">⚠︎ '+twins.length+' other open report'+(twins.length>1?'s':'')+' for this spot — view</div>':'')+
     '<label>Status</label><div class="statusgrid" id="d-status">'+STATUSES.map(s=>'<button class="'+(s===i.status?'sel':'')+'" data-s="'+s+'">'+s+'</button>').join('')+'</div>'+
     (i.history?'<label>History (from the logs)</label><div class="hist">'+esc(i.history)+'</div>':'')+
-    '<label>Work log</label><div>'+(notes.length?notes.map(nt=>'<div class="note"><div class="d">'+fmt(nt.date)+(nt.who?' · '+esc(nt.who):'')+(nt.partNumber?' · part '+esc(nt.partNumber)+(nt.qty?' ×'+nt.qty:''):'')+'</div>'+esc(nt.note)+'</div>').join(''):'<div class="note" style="color:var(--muted)">No work logged here yet</div>')+'</div>'+
+    '<label>Work log</label><div>'+(notes.length?notes.map(nt=>'<div class="note"><div class="d">'+fmt(nt.date)+(nt.who?' · '+esc(nt.who):'')+(nt.partNumber?' · part '+esc(nt.partNumber)+(nt.qty?' ×'+nt.qty:''):'')+'</div>'+esc(nt.note)+(nt.photo?'<img class="notephoto" src="'+esc(nt.photo)+'">':'')+'</div>').join(''):'<div class="note" style="color:var(--muted)">No work logged here yet</div>')+'</div>'+
     '<label>Log work done</label>'+
     '<select id="d-who"><option value="">Who did the work?</option>'+CREW.map(c=>'<option>'+c+'</option>').join('')+'</select>'+
     '<textarea id="d-note" placeholder="What did you do?" style="margin-top:8px"></textarea>'+
-    '<div class="twocol" style="margin-top:8px"><div><input id="d-part" placeholder="Part # used (optional)"></div><div><input id="d-qty" type="number" min="1" placeholder="Qty"></div></div>'+
+    '<label>Parts used</label><div id="d-parts"></div>'+
+    '<button type="button" class="addpart-btn" id="d-addpart">+ add another part</button>'+
+    '<datalist id="partlist">'+parts.map(p=>'<option value="'+esc(p.number)+'">'+esc(p.number)+' — '+esc(p.name)+(p.bin?' ('+esc(p.bin)+')':'')+'</option>').join('')+'</datalist>'+
+    '<label>Photo</label><div id="d-photo"></div>'+
+    '<input id="d-photofile" type="file" accept="image/*" style="display:none">'+
     '<button class="primary-btn" id="d-add">Add to work log</button>'+
     (twins.length?'<button class="warn-btn" id="d-dup">Mark this one a duplicate (close it)</button>':'')+
     '<button class="ghost-btn" id="d-close">Done</button>';
   $('#d-status').querySelectorAll('button').forEach(b=>b.onclick=()=>setStatus(id,b.dataset.s));
   $('#d-add').onclick=()=>addNote(id);
+  document.getElementById('d-parts').innerHTML=''; addPartRow();
+  document.getElementById('d-addpart').onclick=()=>addPartRow();
+  pendingPhoto=null; renderPhotoPreview();
+  document.getElementById('d-photofile').onchange=async(e)=>{ const f=e.target.files&&e.target.files[0]; if(!f) return;
+    try{ pendingPhoto=await compressImage(f,1280,0.7); }catch(err){ pendingPhoto=null; toast('Could not read that photo'); }
+    renderPhotoPreview(); e.target.value=''; };
   $('#d-close').onclick=hide;
   if(twins.length){ $('#d-twin').onclick=()=>openDetail(twins[0].id); $('#d-dup').onclick=()=>markDuplicate(id, twins[0]); }
   show();
@@ -330,16 +352,70 @@ async function markDuplicate(id, keep){
     toast('Closed as duplicate'); hide(); render();
   }catch(e){ toast('Could not update'); }
 }
+function addPartRow(num,qty){
+  const wrap=document.getElementById('d-parts'); if(!wrap) return;
+  const item=document.createElement('div'); item.className='partitem';
+  const row=document.createElement('div'); row.className='partrow';
+  const a=document.createElement('input'); a.className='pnum'; a.setAttribute('list','partlist'); a.placeholder='Part # (optional)'; if(num)a.value=num;
+  const b=document.createElement('input'); b.className='pqty'; b.type='number'; b.min='1'; b.placeholder='Qty'; if(qty)b.value=qty;
+  const x=document.createElement('button'); x.type='button'; x.className='prem'; x.setAttribute('aria-label','remove'); x.textContent='×';
+  const meta=document.createElement('div'); meta.className='pmeta';
+  function upd(){ const p=partByNumber(a.value.trim());
+    if(p){ meta.innerHTML='<b>'+esc(p.name)+'</b> · '+(p.inStock===''?'—':p.inStock+' in stock')+(p.bin?' · bin '+esc(p.bin):''); meta.classList.remove('bad'); }
+    else if(a.value.trim()){ meta.textContent='Not in the parts list'; meta.classList.add('bad'); }
+    else { meta.textContent=''; meta.classList.remove('bad'); } }
+  a.oninput=upd; a.onchange=upd;
+  x.onclick=()=>{ item.remove(); if(!wrap.children.length) addPartRow(); };
+  row.appendChild(a); row.appendChild(b); row.appendChild(x);
+  item.appendChild(row); item.appendChild(meta); wrap.appendChild(item); upd();
+}
+function partByNumber(n){ return parts.find(p=>String(p.number)===String(n)); }
+
+function compressImage(file,maxDim,quality){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{ URL.revokeObjectURL(url); let w=img.naturalWidth,h=img.naturalHeight;
+      if(w>h && w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; }
+      else if(h>=w && h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      const durl=c.toDataURL('image/jpeg',quality);
+      resolve({base64:durl.split(',')[1], type:'image/jpeg', name:(file.name||'photo').replace(/\.[^.]+$/,'')+'.jpg', dataUrl:durl}); };
+    img.onerror=()=>reject(new Error('bad image')); img.src=url;
+  });
+}
+function renderPhotoPreview(){
+  const box=document.getElementById('d-photo'); if(!box) return;
+  if(pendingPhoto){ box.innerHTML='<div class="photochip"><img src="'+pendingPhoto.dataUrl+'"><button type="button" id="d-photorm" aria-label="remove photo">×</button></div>';
+    document.getElementById('d-photorm').onclick=()=>{ pendingPhoto=null; renderPhotoPreview(); }; }
+  else { box.innerHTML='<button type="button" class="addpart-btn" id="d-photobtn">+ add a photo</button>';
+    document.getElementById('d-photobtn').onclick=()=>document.getElementById('d-photofile').click(); }
+}
+
 async function addNote(id){
-  const who=$('#d-who').value, note=$('#d-note').value.trim(), part=$('#d-part').value.trim(), qty=$('#d-qty').value.trim();
-  if(!note && !part){ $('#d-note').focus(); return; }
+  const who=$('#d-who').value, note=$('#d-note').value.trim();
+  const used=[];
+  document.querySelectorAll('#d-parts .partrow').forEach(r=>{
+    const num=r.querySelector('.pnum').value.trim(); const q=Number(r.querySelector('.pqty').value);
+    if(num) used.push({partNumber:num, qty:(q>0?q:0)});
+  });
+  if(!note && !used.length && !pendingPhoto){ $('#d-note').focus(); return; }
   $('#d-add').disabled=true; $('#d-add').textContent='Saving…';
-  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'note',issueId:id,who:who,note:note,partNumber:part,qty:qty})});
+  const payload={action:'note',issueId:id,who:who,note:note,parts:used};
+  if(pendingPhoto){ payload.photo=pendingPhoto.base64; payload.photoType=pendingPhoto.type; payload.photoName=pendingPhoto.name; }
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
     const d=await r.json(); if(d.error) throw new Error(d.error);
-    log.push({id:'tmp'+Date.now(),issueId:id,date:new Date().toISOString().slice(0,10),who:who,note:note,partNumber:part,qty:qty});
+    log.push({id:'tmp'+Date.now(),issueId:id,date:new Date().toISOString().slice(0,10),who:who,note:note,partNumber:used[0]?used[0].partNumber:'',qty:used[0]?used[0].qty:'',photo:pendingPhoto?pendingPhoto.dataUrl:''});
     let msg='Added to work log';
-    if(d.parts&&d.parts.matched) msg='Logged · '+part+' now '+d.parts.remaining+' in stock';
-    else if(d.parts&&!d.parts.matched) msg='Logged · '+part+' not in warehouse list';
+    if(d.parts&&d.parts.length){
+      const ok=d.parts.filter(p=>p.matched), bad=d.parts.filter(p=>!p.matched);
+      ok.forEach(p=>{ const pp=partByNumber(p.number); if(pp) pp.inStock=p.remaining; });
+      if(ok.length===1) msg='Logged · '+ok[0].number+' now '+ok[0].remaining+' in stock';
+      else if(ok.length>1) msg='Logged · '+ok.length+' parts updated';
+      if(bad.length) msg+=' · '+bad.length+' not found';
+    }
+    if(d.photo===false) msg+=' · photo didn\u2019t attach';
+    pendingPhoto=null;
     toast(msg); openDetail(id);
   }catch(e){ $('#d-add').disabled=false; $('#d-add').textContent='Add to work log'; toast('Could not save'); }
 }

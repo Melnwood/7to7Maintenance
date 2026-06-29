@@ -11,7 +11,8 @@ const API = 'https://api.airtable.com/v0/' + BASE_ID;
 const P  = { problem:'Problem', office:'Office', chair:'Chair/Area', urgency:'Urgency',
              status:'Status', reporter:'Reported by', reported:'Reported', fixed:'Date fixed', history:'History' };
 const W  = { entry:'Entry', problemId:'Problem ID', date:'Date', who:'Who', note:'Note',
-             partNumber:'Part number', qty:'Qty used' };
+             partNumber:'Part number', qty:'Qty used', photo:'Photo' };
+const PHOTO_FIELD = 'fldEcNp6pnrOaYErL'; // Work Log → Photo (attachments)
 const PT = { name:'Part name', number:'Part number', stock:'In warehouse', reorderAt:'Reorder at',
              bin:'Bin', vendor:'Vendor', lastOrdered:'Last ordered' };
 const OF = { office:'Office', ops:'Ops', areas:'Area names', notes:'Notes' };
@@ -71,9 +72,10 @@ function mapIssue(r){ var f=r.fields; return {
   id:r.id, office:f[P.office]||'', chair:f[P.chair]||'', problem:f[P.problem]||'',
   impact:(f[P.urgency]||'').toLowerCase(), reporter:f[P.reporter]||'', status:f[P.status]||'New',
   date:f[P.reported]||'', fixed:f[P.fixed]||'', history:f[P.history]||'' }; }
-function mapLog(r){ var f=r.fields; return {
+function mapLog(r){ var f=r.fields; var ph=f[W.photo]; return {
   id:r.id, issueId:f[W.problemId]||'', date:f[W.date]||'', who:f[W.who]||'', note:f[W.note]||'',
-  partNumber:f[W.partNumber]||'', qty:f[W.qty]||'' }; }
+  partNumber:f[W.partNumber]||'', qty:f[W.qty]||'',
+  photo:(ph&&ph[0])?((ph[0].thumbnails&&ph[0].thumbnails.large&&ph[0].thumbnails.large.url)||ph[0].url):'' }; }
 function mapPart(r){ var f=r.fields; var s=f[PT.stock], ra=f[PT.reorderAt]; return {
   id:r.id, name:f[PT.name]||'', number:f[PT.number]||'', inStock:(s==null?'':s), reorderAt:(ra==null?'':ra),
   bin:f[PT.bin]||'', vendor:f[PT.vendor]||'', lastOrdered:f[PT.lastOrdered]||'',
@@ -107,10 +109,45 @@ async function setStatus(b, headers){
 }
 
 async function addNote(b, headers){
-  await logWork(b, headers);
-  var msg = { ok:true };
-  if (b.partNumber && Number(b.qty) > 0) msg.parts = await usePart(b.partNumber, Number(b.qty), headers);
-  return msg;
+  var parts = normalizeParts(b);
+  var first = parts[0];
+  // primary work-log row carries the note text; first part rides along
+  var primaryId = await logWork({ problemId:b.problemId||b.issueId, who:b.who, note:b.note,
+                  partNumber: first ? first.number : '', qty: first ? first.qty : '' }, headers);
+  // any additional parts get their own short rows so each qty is captured
+  for (var i = 1; i < parts.length; i++){
+    await logWork({ problemId:b.problemId||b.issueId, who:b.who, note:'(same job)',
+                    partNumber: parts[i].number, qty: parts[i].qty }, headers);
+  }
+  // decrement every matched part
+  var results = [];
+  for (var k = 0; k < parts.length; k++){
+    if (parts[k].number && parts[k].qty > 0){
+      var res = await usePart(parts[k].number, parts[k].qty, headers);
+      results.push(Object.assign({ number:parts[k].number, qty:parts[k].qty }, res));
+    }
+  }
+  var out = { ok:true, parts: results };
+  // attach a photo to the primary row, if one was sent (non-fatal)
+  if (b.photo && primaryId){
+    try { await uploadPhoto(primaryId, b.photo, b.photoType, b.photoName, headers); out.photo = true; }
+    catch (e){ out.photo = false; out.photoError = String((e && e.message) || e); }
+  }
+  return out;
+}
+
+function normalizeParts(b){
+  var out = [];
+  if (Array.isArray(b.parts)){
+    b.parts.forEach(function(p){
+      var num = String((p && (p.partNumber || p.number)) || '').trim();
+      var q = Number((p && p.qty) || 0);
+      if (num) out.push({ number:num, qty: q > 0 ? q : 0 });
+    });
+  } else if (b.partNumber){
+    out.push({ number:String(b.partNumber).trim(), qty: Number(b.qty || 0) > 0 ? Number(b.qty) : 0 });
+  }
+  return out;
 }
 
 async function logWork(b, headers){
@@ -124,6 +161,17 @@ async function logWork(b, headers){
   if (Number(b.qty) > 0) fields[W.qty] = Number(b.qty);
   var r = await fetch(API + '/' + WORKLOG, { method:'POST', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  var j = await r.json();
+  return j.id;
+}
+
+// upload a base64 image straight into the Work Log row's Photo attachment field
+async function uploadPhoto(recordId, base64, contentType, filename, headers){
+  var url = 'https://content.airtable.com/v0/' + BASE_ID + '/' + recordId + '/' + PHOTO_FIELD + '/uploadAttachment';
+  var body = JSON.stringify({ contentType: contentType || 'image/jpeg', filename: filename || 'photo.jpg', file: base64 });
+  var r = await fetch(url, { method:'POST', headers:headers, body:body });
+  if (!r.ok) throw new Error('Attach ' + r.status + ': ' + (await r.text()));
+  return true;
 }
 
 // find a Part by its part number and subtract qty from In warehouse
