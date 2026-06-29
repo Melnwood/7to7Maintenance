@@ -125,7 +125,7 @@
     <div><h1>Chair Check — Crew</h1><p id="sub">Loading…</p></div>
   </div>
   <div class="tabs" id="tabs">
-    <button data-t="board" class="on">Board</button>
+    <button data-t="board" class="on">Request</button>
     <button data-t="recent">Recent</button>
     <button data-t="offices">Offices</button>
   </div>
@@ -223,7 +223,7 @@ function kcard(i){
   return '<div class="kcard '+(i.impact||'')+'" data-id="'+i.id+'">'+
     '<div class="l"><span class="chair">'+esc(i.chair||'—')+'</span><span class="ag'+(old?' old':'')+'">'+ageStr(n)+'</span></div>'+
     '<div class="pr">'+esc(i.problem)+'</div>'+
-    '<div class="off">'+esc(i.office)+'</div></div>';
+    '<div class="off">'+esc(i.office)+(i.date?' · submitted '+fmt(i.date):'')+'</div></div>';
 }
 
 function dupeSection(clusters,scope){
