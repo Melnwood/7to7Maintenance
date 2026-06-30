@@ -113,12 +113,22 @@ function mapAsset(r){ var f=r.fields; return {
   id:r.id, number:f[AS.number]||'', location:f[AS.location]||'', asset:f[AS.asset]||'',
   serial:f[AS.serial]||'', model:f[AS.model]||'', date:f[AS.date]||'', maker:f[AS.maker]||'', office:f[AS.office]||'' }; }
 
+// Critical equipment is always High priority, no matter what the reporter picked.
+// A down compressor / vacuum / autoclave can stop a whole office.
+var AUTO_HIGH = /(compressor|vacuum|\bvac\b|autoclave|sterilizer|steriliz)/i;
+function autoHighImpact(b){
+  var text = ((b.problem || '') + ' ' + (b.chair || ''));
+  if (AUTO_HIGH.test(text)) return 'high';
+  return b.impact || '';
+}
+
 async function addIssue(b, headers){
   var fields = {};
   fields[P.problem]  = b.problem || '';
   fields[P.office]   = b.office || '';
   fields[P.chair]    = b.chair || '';
-  if (b.impact) fields[P.urgency] = cap(b.impact);
+  var impact = autoHighImpact(b);
+  if (impact) fields[P.urgency] = cap(impact);
   fields[P.reporter] = b.reporter || '';
   fields[P.status]   = 'New';
   fields[P.reported] = today();

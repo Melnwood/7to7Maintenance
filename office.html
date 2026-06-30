@@ -52,6 +52,7 @@
   .upd .ic{flex:0 0 auto;}
   .upd .ux{flex:1;min-width:0;} .upd .ux b{color:#143a5c;} .upd .ud{color:#5a7d9e;font-size:.74rem;margin-top:2px;}
   .newinfo{display:inline-block;background:#E5484D;color:#fff;font-size:.62rem;font-weight:800;border-radius:999px;padding:2px 7px;margin-left:6px;text-transform:uppercase;letter-spacing:.03em;vertical-align:middle;}
+  .critnote{margin-top:8px;font-size:.8rem;font-weight:700;color:#9a2a2e;background:#FFF6F6;border:1px solid #f3c9cb;border-radius:9px;padding:8px 10px;}
   .empty{text-align:center;color:var(--muted);padding:24px;}
   .sechdr{display:flex;align-items:center;gap:8px;margin:14px 0 6px;}
   .sechdr .t{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:800;}
@@ -95,6 +96,7 @@ function fmt(d){if(!d)return'';const x=new Date(d+'T00:00');return isNaN(x)?d:x.
 
 let office=qs('office');
 let draft={chair:'',problem:'',impact:'',reporter:''};
+const AUTO_HIGH=/(compressor|vacuum|\bvac\b|autoclave|sterilizer|steriliz)/i;
 
 // Any office named in the URL is valid — this is how brand-new offices get a working report page.
 if(office){ boot(); } else { renderChooser(); }
@@ -131,6 +133,7 @@ function render(){
         <button class="medium" data-v="medium">Medium</button>
         <button class="low" data-v="low">Low</button>
       </div>
+      <div id="crit-note" class="critnote" style="display:none">⚠ Critical equipment — this will be sent as <b>High</b> priority.</div>
       <button class="primary-btn" id="submit" disabled>Submit report</button>
     </div>
     <div class="card">
@@ -139,9 +142,10 @@ function render(){
     </div>`;
   $('#f-name').oninput=$('#f-chair').oninput=$('#f-desc').oninput=sync;
   $('#f-impact').querySelectorAll('button').forEach(b=>b.onclick=()=>{
-    draft.impact=b.dataset.v;
-    $('#f-impact').querySelectorAll('button').forEach(x=>x.classList.remove('sel'));
-    b.classList.add('sel'); sync();
+    const critical=AUTO_HIGH.test((draft.problem||'')+' '+(draft.chair||''));
+    draft.impact = critical ? 'high' : b.dataset.v;
+    $('#f-impact').querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x.dataset.v===draft.impact));
+    sync();
   });
   $('#submit').onclick=submit;
 }
@@ -149,6 +153,13 @@ function sync(){
   draft.reporter=$('#f-name').value.trim();
   draft.chair=$('#f-chair').value.trim();
   draft.problem=$('#f-desc').value.trim();
+  const critical=AUTO_HIGH.test((draft.problem||'')+' '+(draft.chair||''));
+  const note=$('#crit-note');
+  if(critical){
+    draft.impact='high';
+    $('#f-impact').querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x.dataset.v==='high'));
+    if(note) note.style.display='block';
+  } else if(note){ note.style.display='none'; }
   $('#submit').disabled=!(draft.reporter && draft.problem && draft.impact);
 }
 
