@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.06.29-crew -->
+<!-- BUILD STAMP: v2026.06.29-inventory -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -162,6 +162,14 @@
   .sec .none{font-size:.78rem;color:var(--muted);padding:8px 4px;}
   .s-new{background:#3b82c4;} .s-prog{background:var(--primary);} .s-pend{background:var(--med);} .s-part{background:#8A5CC4;} .s-fixed{background:var(--green);}
   .p-high{background:var(--high);} .p-med{background:var(--med);} .p-low{background:var(--low);} .p-none{background:#cdd5dc;}
+  .panel .none{font-size:.82rem;color:var(--muted);padding:5px 2px;}
+  .kv{display:flex;justify-content:space-between;align-items:center;padding:8px 4px;border-bottom:1px solid var(--line);font-size:.88rem;}
+  .kv:last-child{border-bottom:none;} .kv b{color:var(--ink);}
+  .arow{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);}
+  .arow:last-child{border-bottom:none;}
+  .arow .al{flex:1;min-width:0;} .arow .an{font-weight:700;font-size:.88rem;color:var(--ink);}
+  .arow .am{font-size:.74rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .arow .aage{font-size:.78rem;font-weight:800;color:var(--muted);flex:0 0 auto;} .arow .aage.old{color:var(--high);}
   .backbtn{display:inline-flex;align-items:center;gap:5px;background:none;border:none;color:var(--navy);font-weight:800;font-size:.9rem;cursor:pointer;padding:4px 2px;margin-bottom:6px;}
   .ohead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px;}
   .ohead .nm{font-size:1.08rem;font-weight:800;}
@@ -241,7 +249,7 @@
     <button data-t="board" class="on">Request</button>
     <button data-t="recent">Daily Activity</button>
     <button data-t="offices">Offices</button>
-    <button data-t="warehouse">Warehouse</button>
+    <button data-t="warehouse">Inventory</button>
     <button data-t="manage">Manage</button>
   </div>
 </header>
@@ -265,6 +273,7 @@ const MS=86400000;
 let issues=[], log=[], parts=[], tab='board', filter='', selOffice=null, sortMode='priority';
 let pendingPhoto=null;
 let whMode='order', whSearch='';
+let invMode='parts', assetSearch='';
 let openSecs={};
 let boardMode='status';
 let dismissed={}, showDupes=false, showOfficeDupes=false;
@@ -325,7 +334,7 @@ function render(){
     let body='';
     if(tab==='board') body=viewBoard(open);
     else if(tab==='recent') body=viewRecent();
-    else if(tab==='warehouse') body=viewWarehouse();
+    else if(tab==='warehouse') body=viewInventory();
     else if(tab==='manage') body=viewManage();
     else body=viewOffices();
     $('#wrap').innerHTML=body; wire();
@@ -556,6 +565,103 @@ function actRow(e){ const i=e.i,id=i?i.id:''; let b='',s='';
   else if(e.kind==='Reported'){ b='New report · '+(i?esc(i.chair||'')+' '+esc(i.office):''); s=i?esc(i.problem):''; }
   else { b='Work logged'+(e.w.who?' · '+esc(e.w.who):'')+(i?' · '+esc(i.office):''); s=esc(cleanNote(e.w.note)||('Used part '+e.w.partNumber)); }
   return '<div class="act" data-id="'+id+'"><span class="adot '+e.kind+'"></span><div><div class="b">'+b+'</div><div class="s">'+s+'</div></div></div>'; }
+
+function viewInventory(){
+  let h='<div class="sortrow"><div class="seg">'+
+    '<button class="'+(invMode==='parts'?'on':'')+'" data-inv="parts">Parts</button>'+
+    '<button class="'+(invMode==='assets'?'on':'')+'" data-inv="assets">Equipment</button></div></div>';
+  if(invMode==='assets') return h+assetsDashboard()+assetBrowser();
+  return h+partsDashboard()+viewWarehouse();
+}
+
+function partsUsage(){ const used={}; log.forEach(l=>{ const n=(l.partNumber||'').trim(); const q=parseFloat(l.qty)||0; if(n&&q>0) used[n]=(used[n]||0)+q; }); return used; }
+
+function partsDashboard(){
+  const toOrder=parts.filter(p=>p.orderNow && !(p.onOrder>0));
+  const onOrder=parts.filter(p=>p.onOrder>0);
+  let val=0, haveCost=0;
+  parts.forEach(p=>{ const c=parseFloat(p.cost), s=parseFloat(p.inStock);
+    if(!isNaN(c)&&c>0){ haveCost++; if(!isNaN(s)) val+=c*s; } });
+  const valStr = haveCost? ('$'+Math.round(val).toLocaleString()) : '—';
+  const used=partsUsage(); const anyUsage=Object.keys(used).length>0;
+  const movers=parts.map(p=>({p,n:used[p.number]||0})).filter(x=>x.n>0).sort((a,b)=>b.n-a.n).slice(0,6);
+  const dead=parts.filter(p=>!(used[p.number]>0) && parseFloat(p.inStock)>0).slice(0,8);
+  let h='<div class="stats">'+
+    '<div class="stat"><b>'+toOrder.length+'</b><span>To order</span></div>'+
+    '<div class="stat"><b style="font-size:1.15rem">'+valStr+'</b><span>On the shelf</span></div>'+
+    '<div class="stat"><b>'+onOrder.length+'</b><span>On order</span></div></div>';
+  if(haveCost<parts.length){ h+='<div class="pnote">Add a <b>Unit cost</b> to parts in Airtable to see shelf value — '+haveCost+' of '+parts.length+' have one so far.</div>'; }
+  h+='<div class="secthead">Fast movers · most used</div><div class="panel">';
+  if(anyUsage && movers.length){ const mx=movers[0].n; movers.forEach(m=>{ const pct=Math.max(Math.round(m.n/mx*100),8);
+    h+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+esc(m.p.name)+'</span><span class="ocount"><b>'+m.n+'</b> used</span></div><div class="obar"><i style="width:'+pct+'%"></i></div></div></div>'; }); }
+  else h+='<div class="none">Builds as the crew logs parts used in the app.</div>';
+  h+='</div>';
+  h+='<div class="secthead">Sitting unused</div><div class="panel">';
+  if(anyUsage){ if(dead.length){ dead.forEach(p=>{ h+='<div class="prow2"><div class="pl"><div class="pn">'+esc(p.name)+'</div><div class="pm">#'+esc(p.number)+' · '+esc(p.inStock)+' on hand'+(p.bin?' · bin '+esc(p.bin):'')+'</div></div></div>'; }); }
+    else h+='<div class="none">Nothing flagged — every stocked part has moved.</div>'; }
+  else h+='<div class="none">Once parts get used in the app, the ones that never move show here.</div>';
+  h+='</div>';
+  return h;
+}
+
+function assetYear(a){ const m=String(a.date||'').match(/(19|20)\d\d/); return m?parseInt(m[0],10):null; }
+function assetAge(a){ const y=assetYear(a); if(!y) return null; const d=new Date().getFullYear()-y; return (d>=0&&d<80)?d:null; }
+
+function assetsDashboard(){
+  if(!assets.length) return '<div class="empty">No equipment loaded yet.</div>';
+  const offs={}, types={}; let oldest=null, oldestAge=-1;
+  const b={'0-5':0,'5-10':0,'10-15':0,'15+':0,'unknown':0};
+  assets.forEach(a=>{ if(a.office) offs[a.office]=(offs[a.office]||0)+1;
+    const t=((a.asset||'').trim())||'Other'; types[t]=(types[t]||0)+1;
+    const age=assetAge(a);
+    if(age==null) b.unknown++;
+    else { if(age<5)b['0-5']++; else if(age<10)b['5-10']++; else if(age<15)b['10-15']++; else b['15+']++;
+      if(age>oldestAge){oldestAge=age; oldest=a;} }
+  });
+  const nType=Object.keys(types).length;
+  let h='<div class="stats">'+
+    '<div class="stat"><b>'+assets.length+'</b><span>Total items</span></div>'+
+    '<div class="stat"><b>'+nType+'</b><span>Types</span></div>'+
+    '<div class="stat'+(b['15+']?' dupe':'')+'"><b>'+b['15+']+'</b><span>Over 15 yrs</span></div></div>';
+  h+='<div class="secthead">Age profile</div><div class="panel">';
+  const order=[['0-5','0–5 yrs','#1B9E4B'],['5-10','5–10 yrs','#7BB026'],['10-15','10–15 yrs','#E8930C'],['15+','15+ yrs','#E5484D'],['unknown','No date on file','#cdd5dc']];
+  const maxB=Math.max(order[0]&&1, ...order.map(o=>b[o[0]]),1);
+  order.forEach(o=>{ if(!b[o[0]]) return; const pct=Math.max(Math.round(b[o[0]]/maxB*100),6);
+    h+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+o[1]+'</span><span class="ocount"><b>'+b[o[0]]+'</b></span></div><div class="obar"><i style="width:'+pct+'%;background:'+o[2]+'"></i></div></div></div>'; });
+  h+='</div>';
+  if(oldest) h+='<div class="pnote">Oldest item on file: <b>'+esc(oldest.asset||'item')+'</b> at '+esc(oldest.office)+' — about '+oldestAge+' years old'+(oldest.model?' ('+esc(oldest.model)+')':'')+'.</div>';
+  // problem children: spots with the most repair requests
+  const spots={}; issues.forEach(i=>{ const nc=normChair(i.chair); if(!nc) return; const k=i.office+'|'+nc; (spots[k]=spots[k]||{office:i.office,chair:i.chair,n:0}); spots[k].n++; });
+  const top=Object.keys(spots).map(k=>spots[k]).filter(s=>s.n>=2).sort((a,b)=>b.n-a.n).slice(0,8);
+  h+='<div class="secthead">Problem children · most repair requests</div><div class="panel">';
+  if(top.length){ const mx=top[0].n; top.forEach(s=>{ const pct=Math.max(Math.round(s.n/mx*100),10);
+    h+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+esc(s.office)+' — '+esc(s.chair||'?')+'</span><span class="ocount"><b>'+s.n+'</b> reqs</span></div><div class="obar"><i style="width:'+pct+'%;background:var(--high)"></i></div></div></div>'; }); }
+  else h+='<div class="none">Not enough repair history yet to flag repeat offenders.</div>';
+  h+='</div>';
+  h+='<div class="secthead">By type</div><div class="panel">';
+  Object.keys(types).map(t=>[t,types[t]]).sort((a,b)=>b[1]-a[1]).slice(0,12).forEach(p=>{ h+='<div class="kv"><span>'+esc(p[0])+'</span><b>'+p[1]+'</b></div>'; });
+  h+='</div>';
+  return h;
+}
+
+function assetBrowser(){
+  let h='<div class="secthead" style="margin-top:18px">Browse equipment by office</div>';
+  h+='<input id="as-search" class="whsearch" placeholder="Search type, model, serial, #, office" value="'+esc(assetSearch)+'">';
+  const q=assetSearch.trim().toLowerCase();
+  let list=assets;
+  if(q) list=assets.filter(a=>(((a.asset||'')+' '+(a.model||'')+' '+(a.serial||'')+' '+(a.number||'')+' '+(a.location||'')+' '+(a.office||'')).toLowerCase().indexOf(q)>=0));
+  if(!list.length) return h+'<div class="empty">No equipment matches that search.</div>';
+  const byOff={}; list.forEach(a=>{ const o=a.office||'(no office)'; (byOff[o]=byOff[o]||[]).push(a); });
+  Object.keys(byOff).sort().forEach(o=>{ const items=byOff[o]; const key='asset:'+o; const isOpen=!!openSecs[key]||!!q;
+    h+='<div class="sec'+(isOpen?'':' col')+'"><div class="sechead" data-sec="'+esc(key)+'"><span class="cw s-rank"></span><span class="snm">'+esc(o)+'</span><span class="sct">'+items.length+'</span><span class="cv">▾</span></div><div class="cards">';
+    items.slice().sort((a,b)=>(a.location||'').localeCompare(b.location||'')).forEach(a=>{ const age=assetAge(a);
+      const meta=[a.model,a.serial?'SN '+a.serial:'',a.number?'#'+a.number:''].filter(Boolean).map(esc).join(' · ');
+      h+='<div class="arow"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'</div>';
+    });
+    h+='</div></div>';
+  });
+  return h;
+}
 
 function viewWarehouse(){
   const onWay=parts.filter(p=>p.onOrder>0);
@@ -843,6 +949,10 @@ function wire(){
     filter=(filter===f?'':f); render(); });
   $('#wrap').querySelectorAll('[data-sort]').forEach(c=>c.onclick=()=>{ sortMode=c.dataset.sort; render(); });
   $('#wrap').querySelectorAll('[data-wh]').forEach(c=>c.onclick=()=>{ whMode=c.dataset.wh; render(); });
+  $('#wrap').querySelectorAll('[data-inv]').forEach(c=>c.onclick=()=>{ invMode=c.dataset.inv; render(); });
+  const assrch=document.getElementById('as-search');
+  if(assrch){ assrch.oninput=()=>{ const pos=assrch.selectionStart; assetSearch=assrch.value; render();
+    const n=document.getElementById('as-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }
   $('#wrap').querySelectorAll('[data-part]').forEach(c=>c.onclick=()=>openPart(c.dataset.part));
   const ap=document.getElementById('wh-addpart'); if(ap) ap.onclick=openAddPart;
   const mo=document.getElementById('mg-addoffice'); if(mo) mo.onclick=()=>openAddOffice();
