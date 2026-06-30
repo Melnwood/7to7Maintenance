@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.06.29-equiplife2 -->
+<!-- BUILD STAMP: v2026.06.29-equiphealth2 -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -164,6 +164,8 @@
   .p-high{background:var(--high);} .p-med{background:var(--med);} .p-low{background:var(--low);} .p-none{background:#cdd5dc;}
   .panel .none{font-size:.82rem;color:var(--muted);padding:5px 2px;}
   .kv{display:flex;justify-content:space-between;align-items:center;padding:8px 4px;border-bottom:1px solid var(--line);font-size:.88rem;}
+  .kvcap{font-size:.74rem;color:var(--muted);padding:2px 4px 8px;}
+  .kv b i{font-style:normal;font-weight:600;color:var(--muted);font-size:.78rem;}
   .kv:last-child{border-bottom:none;} .kv b{color:var(--ink);}
   .arow{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);}
   .arow:last-child{border-bottom:none;}
@@ -178,6 +180,28 @@
   .cchip{flex:0 0 auto;font-size:.66rem;font-weight:800;border-radius:99px;padding:2px 8px;margin-left:4px;white-space:nowrap;}
   .cchip.replace{background:#fdecec;color:var(--high);} .cchip.watch{background:#fdf1e0;color:var(--med);}
   .drillback{display:inline-block;font-weight:800;font-size:.85rem;color:var(--navy);cursor:pointer;padding:4px 2px 10px;}
+  .sec.nest{margin-bottom:12px;}
+  .nesthead{background:#f0f5f8;border-color:#cddbe6;} .nesthead .snm{font-size:1rem;flex:1;}
+  .sec.nest>.cards{padding:10px 0 2px;margin-left:8px;padding-left:8px;border-left:2px solid var(--line);}
+  .fhcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin-bottom:12px;}
+  .fhtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .fhlabel{font-weight:800;font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+  .fhverdict{font-weight:800;font-size:.8rem;padding:3px 11px;border-radius:99px;}
+  .fhverdict.v-young{background:#e7f6ec;color:var(--green);} .fhverdict.v-mid{background:#e6f0fb;color:var(--navy);}
+  .fhverdict.v-mat{background:#fdf1e0;color:var(--med);} .fhverdict.v-old{background:#fdecec;color:var(--high);}
+  .fhmain{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:11px;}
+  .fhbig{font-size:1.9rem;font-weight:800;color:var(--ink);line-height:1;} .fhbig i{font-size:.8rem;font-weight:700;color:var(--muted);font-style:normal;}
+  .fhmini{font-size:.78rem;color:var(--muted);text-align:right;} .fhmini b{color:var(--ink);font-size:.92rem;}
+  .spectrum{display:flex;height:12px;border-radius:99px;overflow:hidden;background:#eef2f5;}
+  .spectrum span{display:block;height:100%;}
+  .speclegend{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:.7rem;color:var(--muted);font-weight:600;}
+  .speclegend span{display:inline-flex;align-items:center;gap:4px;} .speclegend i{width:9px;height:9px;border-radius:2px;display:inline-block;}
+  .fhnote{font-size:.74rem;color:var(--muted);margin-top:9px;line-height:1.4;}
+  .ohcard{margin:4px 0 12px;background:#f7fafb;}
+  .ministats{display:flex;gap:7px;margin-bottom:11px;}
+  .mstat{flex:1;background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px 4px;text-align:center;}
+  .mstat b{display:block;font-size:1.2rem;color:var(--ink);} .mstat span{font-size:.6rem;color:var(--muted);font-weight:700;}
+  .mstat.red b{color:var(--high);}
   .backbtn{display:inline-flex;align-items:center;gap:5px;background:none;border:none;color:var(--navy);font-weight:800;font-size:.9rem;cursor:pointer;padding:4px 2px;margin-bottom:6px;}
   .ohead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px;}
   .ohead .nm{font-size:1.08rem;font-weight:800;}
@@ -282,7 +306,7 @@ let issues=[], log=[], parts=[], tab='board', filter='', selOffice=null, sortMod
 let pendingPhoto=null;
 let whMode='order', whSearch='';
 let invMode='parts', assetSearch='', assetDrill='';
-let openSecs={};
+let openSecs={'__replacesoon':true};
 let boardMode='status';
 let dismissed={}, showDupes=false, showOfficeDupes=false;
 
@@ -646,14 +670,41 @@ function cdownChip(f){ if(f.left==null) return '';
   if(f.left===0) return '<span class="cdown red">due now</span>';
   return '<span class="cdown red">'+(-f.left)+' yr'+((-f.left)>1?'s':'')+' over</span>'; }
 
+function verdictFor(avgAge){ if(avgAge==null) return ['—','v-mid'];
+  if(avgAge<6) return ['Young fleet','v-young'];
+  if(avgAge<9) return ['Middle-aged','v-mid'];
+  if(avgAge<12) return ['Maturing','v-mat'];
+  return ['Aging fleet','v-old']; }
+function spectrumHtml(b,total){ const segs=[['0-5','#1B9E4B'],['5-10','#7BB026'],['10-15','#E8930C'],['15+','#E5484D'],['unknown','#cdd5dc']];
+  let s=''; if(!total) return s; segs.forEach(x=>{ if(!b[x[0]]) return; const pct=(b[x[0]]/total*100).toFixed(1); s+='<span style="width:'+pct+'%;background:'+x[1]+'" title="'+x[0]+': '+b[x[0]]+'"></span>'; }); return s; }
+function legendHtml(b){ return '<div class="speclegend"><span><i style="background:#1B9E4B"></i>0–5</span><span><i style="background:#7BB026"></i>5–10</span><span><i style="background:#E8930C"></i>10–15</span><span><i style="background:#E5484D"></i>15+</span>'+(b.unknown?'<span><i style="background:#cdd5dc"></i>no date</span>':'')+'</div>'; }
+function fleetMetrics(list){ let ageSum=0, ageN=0, rep=0, wat=0;
+  const b={'0-5':0,'5-10':0,'10-15':0,'15+':0,'unknown':0};
+  list.forEach(a=>{ const age=assetAge(a);
+    if(age==null) b.unknown++;
+    else { if(age<5)b['0-5']++; else if(age<10)b['5-10']++; else if(age<15)b['10-15']++; else b['15+']++; ageSum+=age; ageN++; }
+    const f=replaceFlag(a); if(f.state==='replace')rep++; else if(f.state==='watch')wat++; });
+  return {b, ageN, avgAge:(ageN?ageSum/ageN:null), rep, wat, total:list.length}; }
+function healthCard(list,label){ const m=fleetMetrics(list); const v=verdictFor(m.avgAge);
+  return '<div class="fhcard ohcard">'+
+    '<div class="fhtop"><span class="fhlabel">'+esc(label||'Health')+'</span><span class="fhverdict '+v[1]+'">'+v[0]+'</span></div>'+
+    '<div class="ministats"><div class="mstat"><b>'+m.total+'</b><span>Items</span></div>'+
+      '<div class="mstat'+(m.rep?' red':'')+'"><b>'+m.rep+'</b><span>Replace now</span></div>'+
+      '<div class="mstat"><b>'+m.wat+'</b><span>Coming due</span></div></div>'+
+    '<div class="spectrum">'+spectrumHtml(m.b,m.total)+'</div>'+legendHtml(m.b)+
+    '<div class="fhnote">Average age '+(m.avgAge!=null?m.avgAge.toFixed(1)+' yrs':'—')+(m.b.unknown?' · '+m.b.unknown+' with no date':'')+'</div>'+
+    '</div>'; }
+
 function assetsDashboard(){
   if(!assets.length) return '<div class="empty">No equipment loaded yet.</div>';
   const cats={}; let oldest=null, oldestAge=-1;
+  let ageSum=0, ageN=0; const offAge={};
   const b={'0-5':0,'5-10':0,'10-15':0,'15+':0,'unknown':0};
   assets.forEach(a=>{ const c=normCat(a.asset); cats[c]=(cats[c]||0)+1;
     const age=assetAge(a);
     if(age==null) b.unknown++;
     else { if(age<5)b['0-5']++; else if(age<10)b['5-10']++; else if(age<15)b['10-15']++; else b['15+']++;
+      ageSum+=age; ageN++; const o=a.office||'(no office)'; (offAge[o]=offAge[o]||{s:0,n:0}); offAge[o].s+=age; offAge[o].n++;
       if(age>oldestAge){oldestAge=age; oldest=a;} }
   });
   // replace-soon flags grouped by category
@@ -664,55 +715,86 @@ function assetsDashboard(){
   flagged.forEach(x=>{ const c=x.f.cat; (byCat[c]=byCat[c]||{replace:[],watch:[]}); byCat[c][x.f.state].push(x); });
   const byLeft=(p,q)=>(p.f.left-q.f.left)||(q.f.reps-p.f.reps);   // most over first, then most repairs
   const catKeys=Object.keys(byCat).sort((x,y)=>(byCat[y].replace.length-byCat[x].replace.length)||(byCat[y].watch.length-byCat[x].watch.length)||x.localeCompare(y));
-  let h='<div class="stats">'+
+  // ---- Fleet health hero (overall age + condition at a glance) ----
+  const avgAge = ageN? (ageSum/ageN) : null;
+  const fv=verdictFor(avgAge);
+  const attN=repCount+watCount;
+  const attPct = ageN? Math.round(attN/ageN*100) : 0;
+  let oldOff=null, oldOffAvg=-1;
+  Object.keys(offAge).forEach(o=>{ const d=offAge[o]; if(d.n>=5){ const av=d.s/d.n; if(av>oldOffAvg){oldOffAvg=av; oldOff=o;} } });
+  let hero='<div class="fhcard">'+
+    '<div class="fhtop"><span class="fhlabel">Fleet health</span><span class="fhverdict '+fv[1]+'">'+fv[0]+'</span></div>'+
+    '<div class="fhmain"><span class="fhbig">'+(avgAge!=null?avgAge.toFixed(1):'—')+'<i> yrs avg</i></span>'+
+      '<span class="fhmini"><b>'+attPct+'%</b> past or nearing end of life</span></div>'+
+    '<div class="spectrum">'+spectrumHtml(b,assets.length)+'</div>'+legendHtml(b)+
+    '<div class="fhnote">'+assets.length+' items'+(b.unknown?' · '+b.unknown+' with no date':'')+(oldOff?' · oldest office: <b>'+esc(oldOff)+'</b> (~'+oldOffAvg.toFixed(0)+' yrs avg)':'')+'</div>'+
+    '</div>';
+  let h=hero+'<div class="stats">'+
     '<div class="stat tap" data-drill="all"><b>'+assets.length+'</b><span>Total items ›</span></div>'+
     '<div class="stat tap'+(repCount?' dupe':'')+'" data-drill="replace"><b>'+repCount+'</b><span>Replace now ›</span></div>'+
     '<div class="stat tap" data-drill="watch"><b>'+watCount+'</b><span>Coming due ›</span></div></div>';
-  h+='<div class="secthead">Replace soon · tap a category</div>';
-  if(!catKeys.length){ h+='<div class="panel"><div class="none">Nothing past its expected life yet. Targets live in the Equipment Life table in Airtable — change them there and this updates.</div></div>'; }
-  else { catKeys.forEach(c=>{ const g=byCat[c]; const key='repl:'+c; const isOpen=!!openSecs[key];
+  // ---- Replace soon: parent window → category windows → items ----
+  let catHtml='';
+  if(!catKeys.length){ catHtml='<div class="none">Nothing past its expected life yet. Targets live in the Equipment Life table in Airtable — change them there and this updates.</div>'; }
+  else catKeys.forEach(c=>{ const g=byCat[c]; const key='repl:'+c; const isOpen=!!openSecs[key];
       const rows=g.replace.slice().sort(byLeft).concat(g.watch.slice().sort(byLeft));
-      h+='<div class="sec'+(isOpen?'':' col')+'">'+
+      catHtml+='<div class="sec'+(isOpen?'':' col')+'">'+
         '<div class="sechead" data-sec="'+esc(key)+'"><span class="cw '+(g.replace.length?'p-high':'p-med')+'"></span>'+
         '<span class="snm">'+esc(c)+'</span>'+
         (g.replace.length?'<span class="cchip replace">'+g.replace.length+' replace</span>':'')+
         (g.watch.length?'<span class="cchip watch">'+g.watch.length+' watch</span>':'')+
         '<span class="cv">▾</span></div><div class="cards">';
       rows.forEach(x=>{ const f=x.f,a=x.a;
-        h+='<div class="arow"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div>'+
+        catHtml+='<div class="arow"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div>'+
           '<div class="am">'+f.age+' yrs old · lasts ~'+f.life+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div>'+
           cdownChip(f)+'</div>'; });
-      h+='</div></div>';
+      catHtml+='</div></div>';
     });
-  }
-  // Age profile (collapsible)
+  const rsChips=(repCount?'<span class="cchip replace">'+repCount+' replace</span>':'')+(watCount?'<span class="cchip watch">'+watCount+' watch</span>':'');
+  h+=nestSec('__replacesoon','Replace soon',rsChips,catHtml);
+
+  // ---- Equipment health: parent window → age / repeat repairs / by type ----
   const order=[['0-5','0–5 yrs','#1B9E4B'],['5-10','5–10 yrs','#7BB026'],['10-15','10–15 yrs','#E8930C'],['15+','15+ yrs','#E5484D'],['unknown','No date on file','#cdd5dc']];
   const maxB=Math.max(...order.map(o=>b[o[0]]),1);
   let ageInner='';
   order.forEach(o=>{ if(!b[o[0]]) return; const pct=Math.max(Math.round(b[o[0]]/maxB*100),6);
     ageInner+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+o[1]+'</span><span class="ocount"><b>'+b[o[0]]+'</b></span></div><div class="obar"><i style="width:'+pct+'%;background:'+o[2]+'"></i></div></div></div>'; });
   if(oldest) ageInner+='<div class="pnote">Oldest item on file: <b>'+esc(normCat(oldest.asset))+'</b> at '+esc(oldest.office)+' — about '+oldestAge+' years old'+(oldest.model?' ('+esc(oldest.model)+')':'')+'.</div>';
-  h+=eqpSec('eqp:age','Age profile','',ageInner);
-  // Problem children (collapsible)
   const spots={}; issues.forEach(i=>{ const nc=normChair(i.chair); if(!nc) return; const k=i.office+'|'+nc; (spots[k]=spots[k]||{office:i.office,chair:i.chair,n:0}); spots[k].n++; });
   const top=Object.keys(spots).map(k=>spots[k]).filter(s=>s.n>=2).sort((a,b)=>b.n-a.n).slice(0,8);
   let probInner='';
   if(top.length){ const mx=top[0].n; top.forEach(s=>{ const pct=Math.max(Math.round(s.n/mx*100),10);
     probInner+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+esc(s.office)+' — '+esc(s.chair||'?')+'</span><span class="ocount"><b>'+s.n+'</b> reqs</span></div><div class="obar"><i style="width:'+pct+'%;background:var(--high)"></i></div></div></div>'; }); }
   else probInner='<div class="none">Not enough repair history yet to flag repeat offenders.</div>';
-  h+=eqpSec('eqp:prob','Problem children · most repair requests',(top.length?String(top.length):''),probInner);
-  // By type (collapsible)
-  let typeInner='';
-  Object.keys(cats).map(t=>[t,cats[t]]).sort((a,b)=>b[1]-a[1]).forEach(p=>{ typeInner+='<div class="kv"><span>'+esc(p[0])+'</span><b>'+p[1]+'</b></div>'; });
-  h+=eqpSec('eqp:type','By type',Object.keys(cats).length+' kinds',typeInner);
+  let typeInner='<div class="kvcap">How many of each — counted across all 12 offices.</div>';
+  Object.keys(cats).map(t=>[t,cats[t]]).sort((a,b)=>b[1]-a[1]).forEach(p=>{ typeInner+='<div class="kv"><span>'+esc(p[0])+'</span><b>'+p[1]+' <i>items</i></b></div>'; });
+  let healthHtml='';
+  healthHtml+=eqpSec('eqp:age','Age profile','',ageInner);
+  healthHtml+=eqpSec('eqp:prob','Repeat repairs · same spot, more than once',(top.length?String(top.length):''),probInner);
+  healthHtml+=eqpSec('eqp:type','By type',Object.keys(cats).length+' kinds',typeInner);
+  h+=nestSec('__equiphealth','Equipment health','',healthHtml);
   return h;
 }
+function nestSec(key,title,chips,inner){ const isOpen=!!openSecs[key];
+  return '<div class="sec nest'+(isOpen?'':' col')+'"><div class="sechead nesthead" data-sec="'+esc(key)+'"><span class="snm">'+esc(title)+'</span>'+(chips||'')+'<span class="cv">▾</span></div><div class="cards">'+inner+'</div></div>'; }
 function eqpSec(key,title,countLabel,inner){ const isOpen=!!openSecs[key];
   return '<div class="sec'+(isOpen?'':' col')+'"><div class="sechead" data-sec="'+esc(key)+'"><span class="cw s-rank"></span><span class="snm">'+esc(title)+'</span>'+(countLabel?'<span class="sct">'+esc(countLabel)+'</span>':'')+'<span class="cv">▾</span></div><div class="cards">'+inner+'</div></div>'; }
 
 function assetDrillView(){
   let h='<div class="drillback" data-drill="">‹ Back to equipment</div>';
-  if(assetDrill==='all'){ return h+assetBrowser(); }
+  if(assetDrill==='all'){
+    const byType={}; assets.forEach(a=>{ const c=normCat(a.asset); (byType[c]=byType[c]||[]).push(a); });
+    const keys=Object.keys(byType).sort((x,y)=>byType[y].length-byType[x].length||x.localeCompare(y));
+    h+='<div class="secthead">All equipment by type · '+assets.length+' items</div>';
+    keys.forEach(c=>{ const items=byType[c]; const key='type:'+c; const isOpen=!!openSecs[key];
+      h+='<div class="sec'+(isOpen?'':' col')+'"><div class="sechead" data-sec="'+esc(key)+'"><span class="cw s-rank"></span><span class="snm">'+esc(c)+'</span><span class="sct">'+items.length+'</span><span class="cv">▾</span></div><div class="cards">';
+      items.slice().sort((p,q)=>(p.office||'').localeCompare(q.office||'')||(p.location||'').localeCompare(q.location||'')).forEach(a=>{ const age=assetAge(a); const fl=replaceFlag(a);
+        const meta=[a.model,a.serial?'SN '+a.serial:'',a.number?'#'+a.number:''].filter(Boolean).map(esc).join(' · ');
+        h+='<div class="arow"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(fl.state?cdownChip(fl):'')+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'</div>'; });
+      h+='</div></div>';
+    });
+    return h;
+  }
   const flagged=assets.map(a=>({a,f:replaceFlag(a)})).filter(x=>x.f.state===assetDrill);
   flagged.sort((p,q)=>(p.f.left-q.f.left)||(q.f.reps-p.f.reps));
   const title=(assetDrill==='replace'?'Replace now':'Coming due')+' · '+flagged.length+' item'+(flagged.length===1?'':'s');
@@ -724,9 +806,8 @@ function assetDrillView(){
   return h;
 }
 
-function assetBrowser(){
-  let h='<div class="secthead" style="margin-top:18px">Browse equipment by office</div>';
-  h+='<input id="as-search" class="whsearch" placeholder="Search type, model, serial, #, office" value="'+esc(assetSearch)+'">';
+function assetBrowserInner(){
+  let h='<input id="as-search" class="whsearch" placeholder="Search type, model, serial, #, office" value="'+esc(assetSearch)+'">';
   const q=assetSearch.trim().toLowerCase();
   let list=assets;
   if(q) list=assets.filter(a=>(((a.asset||'')+' '+(a.model||'')+' '+(a.serial||'')+' '+(a.number||'')+' '+(a.location||'')+' '+(a.office||'')).toLowerCase().indexOf(q)>=0));
@@ -734,6 +815,7 @@ function assetBrowser(){
   const byOff={}; list.forEach(a=>{ const o=a.office||'(no office)'; (byOff[o]=byOff[o]||[]).push(a); });
   Object.keys(byOff).sort().forEach(o=>{ const items=byOff[o]; const key='asset:'+o; const isOpen=!!openSecs[key]||!!q;
     h+='<div class="sec'+(isOpen?'':' col')+'"><div class="sechead" data-sec="'+esc(key)+'"><span class="cw s-rank"></span><span class="snm">'+esc(o)+'</span><span class="sct">'+items.length+'</span><span class="cv">▾</span></div><div class="cards">';
+    h+=healthCard(items,o+' health');
     items.slice().sort((a,b)=>(a.location||'').localeCompare(b.location||'')).forEach(a=>{ const age=assetAge(a); const fl=replaceFlag(a);
       const meta=[a.model,a.serial?'SN '+a.serial:'',a.number?'#'+a.number:''].filter(Boolean).map(esc).join(' · ');
       h+='<div class="arow"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(fl.state?cdownChip(fl):'')+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'</div>';
@@ -742,6 +824,7 @@ function assetBrowser(){
   });
   return h;
 }
+function assetBrowser(){ return nestSec('__browse','Browse by office','<span class="sct">'+assets.length+'</span>',assetBrowserInner()); }
 
 function viewWarehouse(){
   const onWay=parts.filter(p=>p.onOrder>0);
