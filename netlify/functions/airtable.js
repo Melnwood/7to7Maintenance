@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.06.29-outofservice
+// BUILD: v2026.06.30-reports
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -22,7 +22,7 @@ const PT = { name:'Part name', number:'Part number', stock:'In warehouse', reord
              bin:'Bin', vendor:'Vendor', lastOrdered:'Last ordered', onOrder:'On order qty', orderDate:'Order date', max:'Max', cost:'Unit cost' };
 const OF = { office:'Office', ops:'Ops', areas:'Area names', notes:'Notes' };
 const AS = { number:'Asset Number', location:'Location', asset:'Asset', serial:'Serial Number',
-             model:'Make/Model', date:'Manufacture Date', maker:'Manufacturer', office:'Office', status:'Status' };
+             model:'Make/Model', date:'Manufacture Date', maker:'Manufacturer', office:'Office', status:'Status', lifeOverride:'Life override' };
 
 exports.handler = async function (event) {
   const token = process.env.AIRTABLE_TOKEN;
@@ -39,6 +39,9 @@ exports.handler = async function (event) {
       // Equipment Life = small Adrian-editable table (Category, Years). Optional — falls back to [] if absent.
       var life = [];
       try { life = (await fetchAll('Equipment%20Life', headers, '')).map(mapLife); } catch(e){ life = []; }
+      // People = small Adrian-editable crew list (Name, Active). Optional — falls back to [] if absent.
+      var people = [];
+      try { people = (await fetchAll('People', headers, '')).map(mapPerson); } catch(e){ people = []; }
       // Live office list = union of Offices table + any office found on assets or problems
       var offSet = {};
       offices.forEach(function(o){ var n=String((o.fields[OF.office]||'')).trim(); if(n) offSet[n]=true; });
@@ -46,13 +49,14 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.06.29-outofservice',
+        build: 'v2026.06.30-reports',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
         offices: offices.map(mapOffice),
         assets: assets.map(mapAsset),
         life: life,
+        people: people,
         officeList: officeList
       });
     }
@@ -66,8 +70,10 @@ exports.handler = async function (event) {
       if (b.action === 'order')  return resp(200, await orderPart(b, headers));
       if (b.action === 'receive')return resp(200, await receivePart(b, headers));
       if (b.action === 'adjust') return resp(200, await adjustPart(b, headers));
+      if (b.action === 'editpart')return resp(200, await editPart(b, headers));
       if (b.action === 'addpart')return resp(200, await addPart(b, headers));
       if (b.action === 'addoffice')return resp(200, await addOffice(b, headers));
+      if (b.action === 'addperson')return resp(200, await addPerson(b, headers));
       if (b.action === 'addasset')return resp(200, await addAssets(b, headers));
       if (b.action === 'editasset')return resp(200, await editAsset(b, headers));
       return resp(400, { error: 'unknown action' });
@@ -104,6 +110,8 @@ function mapIssue(r){ var f=r.fields; return {
   date:f[P.reported]||'', fixed:f[P.fixed]||'', history:f[P.history]||'' }; }
 function mapLife(r){ var f=r.fields; var y=f['Years'];
   return { category:String(f['Category']||'').trim(), years:(y==null||y===''?null:Number(y)) }; }
+function mapPerson(r){ var f=r.fields; var act=f['Active'];
+  return { id:r.id, name:String(f['Name']||'').trim(), active:(act===undefined?true:!!act) }; }
 function mapLog(r){ var f=r.fields; var ph=f[W.photo]; return {
   id:r.id, issueId:f[W.problemId]||'', date:f[W.date]||'', who:f[W.who]||'', note:f[W.note]||'',
   partNumber:f[W.partNumber]||'', qty:f[W.qty]||'',
@@ -121,7 +129,7 @@ function mapOffice(r){ var f=r.fields; return {
 
 function mapAsset(r){ var f=r.fields; return {
   id:r.id, number:f[AS.number]||'', location:f[AS.location]||'', asset:f[AS.asset]||'',
-  serial:f[AS.serial]||'', model:f[AS.model]||'', date:f[AS.date]||'', maker:f[AS.maker]||'', office:f[AS.office]||'', status:f[AS.status]||'' }; }
+  serial:f[AS.serial]||'', model:f[AS.model]||'', date:f[AS.date]||'', maker:f[AS.maker]||'', office:f[AS.office]||'', status:f[AS.status]||'', lifeOverride:(f[AS.lifeOverride]==null?'':f[AS.lifeOverride]) }; }
 
 // Critical equipment is always High priority, no matter what the reporter picked.
 // A down compressor / vacuum / autoclave can stop a whole office.
@@ -162,7 +170,7 @@ async function editAsset(b, headers){
   if (!b.id) return { ok:false, error:'no record id' };
   // Map only the fields Adrian actually changed onto the real Airtable column names.
   var map = { asset:AS.asset, location:AS.location, office:AS.office, model:AS.model,
-              serial:AS.serial, date:AS.date, number:AS.number, maker:AS.maker, status:AS.status };
+              serial:AS.serial, date:AS.date, number:AS.number, maker:AS.maker, status:AS.status, lifeOverride:AS.lifeOverride };
   var fields = {};
   Object.keys(map).forEach(function(k){ if (b[k] !== undefined) fields[map[k]] = b[k]; });
   if (!Object.keys(fields).length) return { ok:false, error:'nothing to update' };
@@ -299,6 +307,19 @@ async function receivePart(b, headers){
 }
 
 // adjust on-hand count to an exact number (corrections / receiving without an order)
+// update a part's min (Reorder at) and/or max
+async function editPart(b, headers){
+  var rec = await findPart(String(b.number || '').trim(), headers);
+  if (!rec) return { ok:false, matched:false };
+  var fields = {};
+  if (b.reorderAt !== undefined && b.reorderAt !== null && b.reorderAt !== '') fields[PT.reorderAt] = Math.max(Math.round(Number(b.reorderAt)||0),0);
+  if (b.max !== undefined && b.max !== null && b.max !== '') fields[PT.max] = Math.max(Math.round(Number(b.max)||0),0);
+  if (!Object.keys(fields).length) return { ok:false, error:'Nothing to update.' };
+  var r = await fetch(API + '/' + PARTS + '/' + rec.id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  return { ok:true, matched:true };
+}
+
 async function adjustPart(b, headers){
   var rec = await findPart(String(b.number || '').trim(), headers);
   if (!rec) return { ok:false, matched:false };
@@ -341,6 +362,16 @@ async function addOffice(b, headers){
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   var j = await r.json();
   return { ok:true, id:j.id, office:name };
+}
+
+// add a crew member to the People table (Adrian self-serves from the Manage tab)
+async function addPerson(b, headers){
+  var name = String(b.name || '').trim();
+  if (!name) return { ok:false, error:'Name is required.' };
+  var r = await fetch(API + '/' + encodeURIComponent('People'), { method:'POST', headers:headers, body: JSON.stringify({ fields:{ Name:name, Active:true }, typecast:true }) });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  var j = await r.json();
+  return { ok:true, id:j.id, name:name };
 }
 
 // create one or many asset rows in the Assets table (batched 10 per request)
