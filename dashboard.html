@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.06.30-partsbrand -->
+<!-- BUILD STAMP: v2026.06.30-noavg -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -603,7 +603,6 @@ function dupRow(i){ const n=daysAgo(i.date);
     '<span class="ag">'+ageStr(n)+'</span></div>'; }
 
 function inRangeStr(d,from,to){ if(!d) return false; d=String(d).slice(0,10); if(from&&d<from) return false; if(to&&d>to) return false; return true; }
-function daysBetween(a,b){ const x=dObj(a),y=dObj(b); if(!x||!y) return null; return Math.round((y-x)/MS); }
 function lastWorkFor(id){ const ws=log.filter(w=>w.issueId===id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   let note='',who='',parts='';
   ws.forEach(w=>{ if(!who&&w.who) who=w.who; if(!parts&&w.partNumber) parts=w.partNumber+(w.qty?(' ×'+w.qty):''); });
@@ -630,14 +629,12 @@ function reportPrintHTML(office,from,to,wantDone,wantOpen){
   const logoEl=document.querySelector('header .logo img'); const logo=logoEl?logoEl.src:'';
   const scope=(office&&office!=='All')?office:'All offices';
   const range=(from||to)?((from||'…')+' to '+(to||'…')):'All dates';
-  let ds=[]; r.completed.forEach(i=>{ const d=daysBetween(i.date,i.fixed); if(d!=null&&d>=0) ds.push(d); });
-  const avg = ds.length? (ds.reduce((a,b)=>a+b,0)/ds.length).toFixed(1) : '—';
   const byOff=list=>{ const m={}; list.forEach(i=>{ (m[i.office||'(no office)']=m[i.office||'(no office)']||[]).push(i); }); return m; };
   const esc2=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   let body='';
   body+='<div class="rh">'+(logo?'<div class="rlogo"><img src="'+logo+'" alt="7to7"></div>':'')+'<div class="rtitle"><h1>Maintenance Work Report</h1><div class="sub">'+esc2(scope)+' · '+esc2(range)+'</div></div><div class="gen">Generated<br>'+new Date().toLocaleDateString()+'</div></div>';
   body+='<div class="cards">';
-  if(wantDone) body+='<div class="kpi"><b>'+r.completed.length+'</b><span>Completed</span></div><div class="kpi"><b>'+avg+'</b><span>Avg days to fix</span></div>';
+  if(wantDone) body+='<div class="kpi"><b>'+r.completed.length+'</b><span>Completed</span></div>';
   if(wantOpen) body+='<div class="kpi"><b>'+r.open.length+'</b><span>Still open</span></div>';
   body+='</div>';
   const sect=(title,list,done)=>{ if(!list.length) return '<h2>'+title+'</h2><p class="empty">None in this period.</p>';
