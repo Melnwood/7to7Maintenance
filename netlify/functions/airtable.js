@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.06.29-equiphealth2
+// BUILD: v2026.06.29-outofservice
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -22,7 +22,7 @@ const PT = { name:'Part name', number:'Part number', stock:'In warehouse', reord
              bin:'Bin', vendor:'Vendor', lastOrdered:'Last ordered', onOrder:'On order qty', orderDate:'Order date', max:'Max', cost:'Unit cost' };
 const OF = { office:'Office', ops:'Ops', areas:'Area names', notes:'Notes' };
 const AS = { number:'Asset Number', location:'Location', asset:'Asset', serial:'Serial Number',
-             model:'Make/Model', date:'Manufacture Date', maker:'Manufacturer', office:'Office' };
+             model:'Make/Model', date:'Manufacture Date', maker:'Manufacturer', office:'Office', status:'Status' };
 
 exports.handler = async function (event) {
   const token = process.env.AIRTABLE_TOKEN;
@@ -46,7 +46,7 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.06.29-equiphealth2',
+        build: 'v2026.06.29-outofservice',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
@@ -69,6 +69,7 @@ exports.handler = async function (event) {
       if (b.action === 'addpart')return resp(200, await addPart(b, headers));
       if (b.action === 'addoffice')return resp(200, await addOffice(b, headers));
       if (b.action === 'addasset')return resp(200, await addAssets(b, headers));
+      if (b.action === 'editasset')return resp(200, await editAsset(b, headers));
       return resp(400, { error: 'unknown action' });
     }
     return resp(405, { error: 'method not allowed' });
@@ -120,7 +121,7 @@ function mapOffice(r){ var f=r.fields; return {
 
 function mapAsset(r){ var f=r.fields; return {
   id:r.id, number:f[AS.number]||'', location:f[AS.location]||'', asset:f[AS.asset]||'',
-  serial:f[AS.serial]||'', model:f[AS.model]||'', date:f[AS.date]||'', maker:f[AS.maker]||'', office:f[AS.office]||'' }; }
+  serial:f[AS.serial]||'', model:f[AS.model]||'', date:f[AS.date]||'', maker:f[AS.maker]||'', office:f[AS.office]||'', status:f[AS.status]||'' }; }
 
 // Critical equipment is always High priority, no matter what the reporter picked.
 // A down compressor / vacuum / autoclave can stop a whole office.
@@ -154,6 +155,19 @@ async function setStatus(b, headers){
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   // log the status change so the date is captured
   await logWork({ problemId:b.id, who:b.who||'', note:'Status changed to ' + b.status }, headers);
+  return { ok:true };
+}
+
+async function editAsset(b, headers){
+  if (!b.id) return { ok:false, error:'no record id' };
+  // Map only the fields Adrian actually changed onto the real Airtable column names.
+  var map = { asset:AS.asset, location:AS.location, office:AS.office, model:AS.model,
+              serial:AS.serial, date:AS.date, number:AS.number, maker:AS.maker, status:AS.status };
+  var fields = {};
+  Object.keys(map).forEach(function(k){ if (b[k] !== undefined) fields[map[k]] = b[k]; });
+  if (!Object.keys(fields).length) return { ok:false, error:'nothing to update' };
+  var r = await fetch(API + '/' + ASSETS + '/' + b.id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   return { ok:true };
 }
 
