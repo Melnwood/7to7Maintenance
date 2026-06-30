@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.06.29-equiplife -->
+<!-- BUILD STAMP: v2026.06.29-equiplife2 -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -172,6 +172,12 @@
   .arow .aage{font-size:.78rem;font-weight:800;color:var(--muted);flex:0 0 auto;} .arow .aage.old{color:var(--high);}
   .fbadge{flex:0 0 auto;font-size:.66rem;font-weight:800;padding:3px 8px;border-radius:99px;text-transform:uppercase;letter-spacing:.03em;}
   .fbadge.replace{background:#fdecec;color:var(--high);} .fbadge.watch{background:#fdf1e0;color:var(--med);}
+  .stat.tap{cursor:pointer;transition:border-color .12s,transform .06s;} .stat.tap:hover{border-color:#bcd0e2;} .stat.tap:active{transform:scale(.98);}
+  .cdown{flex:0 0 auto;font-size:.72rem;font-weight:800;padding:4px 10px;border-radius:99px;white-space:nowrap;}
+  .cdown.green{background:#e7f6ec;color:var(--green);} .cdown.red{background:#fdecec;color:var(--high);}
+  .cchip{flex:0 0 auto;font-size:.66rem;font-weight:800;border-radius:99px;padding:2px 8px;margin-left:4px;white-space:nowrap;}
+  .cchip.replace{background:#fdecec;color:var(--high);} .cchip.watch{background:#fdf1e0;color:var(--med);}
+  .drillback{display:inline-block;font-weight:800;font-size:.85rem;color:var(--navy);cursor:pointer;padding:4px 2px 10px;}
   .backbtn{display:inline-flex;align-items:center;gap:5px;background:none;border:none;color:var(--navy);font-weight:800;font-size:.9rem;cursor:pointer;padding:4px 2px;margin-bottom:6px;}
   .ohead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px;}
   .ohead .nm{font-size:1.08rem;font-weight:800;}
@@ -275,7 +281,7 @@ const MS=86400000;
 let issues=[], log=[], parts=[], tab='board', filter='', selOffice=null, sortMode='priority';
 let pendingPhoto=null;
 let whMode='order', whSearch='';
-let invMode='parts', assetSearch='';
+let invMode='parts', assetSearch='', assetDrill='';
 let openSecs={};
 let boardMode='status';
 let dismissed={}, showDupes=false, showOfficeDupes=false;
@@ -327,7 +333,7 @@ async function load(){
     render();
   }catch(e){ $('#wrap').innerHTML='<div class="empty">Could not load.<br><span class="muted">'+esc(e.message||'')+'</span></div>'; }
 }
-$('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{ tab=b.dataset.t; showDupes=false; selOffice=null; showOfficeDupes=false;
+$('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{ tab=b.dataset.t; showDupes=false; selOffice=null; showOfficeDupes=false; assetDrill='';
   $('#tabs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
 
 function render(){
@@ -574,7 +580,7 @@ function viewInventory(){
   let h='<div class="sortrow"><div class="seg">'+
     '<button class="'+(invMode==='parts'?'on':'')+'" data-inv="parts">Parts</button>'+
     '<button class="'+(invMode==='assets'?'on':'')+'" data-inv="assets">Equipment</button></div></div>';
-  if(invMode==='assets') return h+assetsDashboard()+assetBrowser();
+  if(invMode==='assets') return h+(assetDrill?assetDrillView():(assetsDashboard()+assetBrowser()));
   return h+partsDashboard()+viewWarehouse();
 }
 
@@ -628,13 +634,17 @@ function normCat(t){ const s=String(t||'').toLowerCase();
   return (String(t||'').trim())||'Other';
 }
 function repairsFor(a){ const nl=normChair(a.location); if(!nl) return 0; return issues.filter(i=>i.office===a.office && normChair(i.chair)===nl).length; }
-function replaceFlag(a){ const age=assetAge(a); if(age==null) return {state:'',age:null,life:null,cat:normCat(a.asset),reps:0};
+function replaceFlag(a){ const age=assetAge(a); if(age==null) return {state:'',age:null,life:null,left:null,cat:normCat(a.asset),reps:0};
   const cat=normCat(a.asset), life=lifeMap[cat], reps=repairsFor(a);
-  if(life==null) return {state:'',age:age,life:null,cat:cat,reps:reps};
-  var state='';
-  if(age>=life) state='replace';
-  else if(age>=life-2) state=(reps>=3?'replace':'watch');  // old + breaking a lot escalates
-  return {state:state,age:age,life:life,cat:cat,reps:reps}; }
+  if(life==null) return {state:'',age:age,life:null,left:null,cat:cat,reps:reps};
+  const left=life-age; var state='';
+  if(left<=0) state='replace';            // hit or past expected life
+  else if(left<=3) state='watch';         // 1–3 years left
+  return {state:state,age:age,life:life,left:left,cat:cat,reps:reps}; }
+function cdownChip(f){ if(f.left==null) return '';
+  if(f.left>0) return '<span class="cdown green">'+f.left+' yr'+(f.left>1?'s':'')+' left</span>';
+  if(f.left===0) return '<span class="cdown red">due now</span>';
+  return '<span class="cdown red">'+(-f.left)+' yr'+((-f.left)>1?'s':'')+' over</span>'; }
 
 function assetsDashboard(){
   if(!assets.length) return '<div class="empty">No equipment loaded yet.</div>';
@@ -646,40 +656,70 @@ function assetsDashboard(){
     else { if(age<5)b['0-5']++; else if(age<10)b['5-10']++; else if(age<15)b['10-15']++; else b['15+']++;
       if(age>oldestAge){oldestAge=age; oldest=a;} }
   });
-  // replace-soon flags (age vs Adrian's expected-life table, repairs escalate)
+  // replace-soon flags grouped by category
   const flagged=assets.map(a=>({a,f:replaceFlag(a)})).filter(x=>x.f.state);
-  const byOver=(a,b)=>((b.f.age-b.f.life)-(a.f.age-a.f.life))||(b.f.reps-a.f.reps);
-  const reps=flagged.filter(x=>x.f.state==='replace').sort(byOver);
-  const wat=flagged.filter(x=>x.f.state==='watch').sort(byOver);
+  const repCount=flagged.filter(x=>x.f.state==='replace').length;
+  const watCount=flagged.filter(x=>x.f.state==='watch').length;
+  const byCat={};
+  flagged.forEach(x=>{ const c=x.f.cat; (byCat[c]=byCat[c]||{replace:[],watch:[]}); byCat[c][x.f.state].push(x); });
+  const byLeft=(p,q)=>(p.f.left-q.f.left)||(q.f.reps-p.f.reps);   // most over first, then most repairs
+  const catKeys=Object.keys(byCat).sort((x,y)=>(byCat[y].replace.length-byCat[x].replace.length)||(byCat[y].watch.length-byCat[x].watch.length)||x.localeCompare(y));
   let h='<div class="stats">'+
-    '<div class="stat"><b>'+assets.length+'</b><span>Total items</span></div>'+
-    '<div class="stat'+(reps.length?' dupe':'')+'"><b>'+reps.length+'</b><span>Replace soon</span></div>'+
-    '<div class="stat"><b>'+wat.length+'</b><span>On watch</span></div></div>';
-  // Replace soon
-  h+='<div class="secthead">Replace soon · age vs expected life</div><div class="panel">';
-  if(!flagged.length){ h+='<div class="none">Nothing past its expected life yet. Targets live in the Equipment Life table in Airtable — change them there and this updates.</div>'; }
-  else { const rowF=(x,cls,lbl)=>{ const f=x.f,a=x.a; return '<div class="arow"><div class="al"><div class="an">'+esc(a.office)+' — '+esc(f.cat)+(a.location?' · '+esc(a.location):'')+'</div><div class="am">'+f.age+' yrs old · expected '+f.life+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div><span class="fbadge '+cls+'">'+lbl+'</span></div>'; };
-    reps.forEach(x=>h+=rowF(x,'replace','Replace')); wat.forEach(x=>h+=rowF(x,'watch','Watch')); }
-  h+='</div>';
-  // Age profile
-  h+='<div class="secthead">Age profile</div><div class="panel">';
+    '<div class="stat tap" data-drill="all"><b>'+assets.length+'</b><span>Total items ›</span></div>'+
+    '<div class="stat tap'+(repCount?' dupe':'')+'" data-drill="replace"><b>'+repCount+'</b><span>Replace now ›</span></div>'+
+    '<div class="stat tap" data-drill="watch"><b>'+watCount+'</b><span>Coming due ›</span></div></div>';
+  h+='<div class="secthead">Replace soon · tap a category</div>';
+  if(!catKeys.length){ h+='<div class="panel"><div class="none">Nothing past its expected life yet. Targets live in the Equipment Life table in Airtable — change them there and this updates.</div></div>'; }
+  else { catKeys.forEach(c=>{ const g=byCat[c]; const key='repl:'+c; const isOpen=!!openSecs[key];
+      const rows=g.replace.slice().sort(byLeft).concat(g.watch.slice().sort(byLeft));
+      h+='<div class="sec'+(isOpen?'':' col')+'">'+
+        '<div class="sechead" data-sec="'+esc(key)+'"><span class="cw '+(g.replace.length?'p-high':'p-med')+'"></span>'+
+        '<span class="snm">'+esc(c)+'</span>'+
+        (g.replace.length?'<span class="cchip replace">'+g.replace.length+' replace</span>':'')+
+        (g.watch.length?'<span class="cchip watch">'+g.watch.length+' watch</span>':'')+
+        '<span class="cv">▾</span></div><div class="cards">';
+      rows.forEach(x=>{ const f=x.f,a=x.a;
+        h+='<div class="arow"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div>'+
+          '<div class="am">'+f.age+' yrs old · lasts ~'+f.life+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div>'+
+          cdownChip(f)+'</div>'; });
+      h+='</div></div>';
+    });
+  }
+  // Age profile (collapsible)
   const order=[['0-5','0–5 yrs','#1B9E4B'],['5-10','5–10 yrs','#7BB026'],['10-15','10–15 yrs','#E8930C'],['15+','15+ yrs','#E5484D'],['unknown','No date on file','#cdd5dc']];
   const maxB=Math.max(...order.map(o=>b[o[0]]),1);
+  let ageInner='';
   order.forEach(o=>{ if(!b[o[0]]) return; const pct=Math.max(Math.round(b[o[0]]/maxB*100),6);
-    h+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+o[1]+'</span><span class="ocount"><b>'+b[o[0]]+'</b></span></div><div class="obar"><i style="width:'+pct+'%;background:'+o[2]+'"></i></div></div></div>'; });
-  h+='</div>';
-  if(oldest) h+='<div class="pnote">Oldest item on file: <b>'+esc(normCat(oldest.asset))+'</b> at '+esc(oldest.office)+' — about '+oldestAge+' years old'+(oldest.model?' ('+esc(oldest.model)+')':'')+'.</div>';
-  // Problem children
+    ageInner+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+o[1]+'</span><span class="ocount"><b>'+b[o[0]]+'</b></span></div><div class="obar"><i style="width:'+pct+'%;background:'+o[2]+'"></i></div></div></div>'; });
+  if(oldest) ageInner+='<div class="pnote">Oldest item on file: <b>'+esc(normCat(oldest.asset))+'</b> at '+esc(oldest.office)+' — about '+oldestAge+' years old'+(oldest.model?' ('+esc(oldest.model)+')':'')+'.</div>';
+  h+=eqpSec('eqp:age','Age profile','',ageInner);
+  // Problem children (collapsible)
   const spots={}; issues.forEach(i=>{ const nc=normChair(i.chair); if(!nc) return; const k=i.office+'|'+nc; (spots[k]=spots[k]||{office:i.office,chair:i.chair,n:0}); spots[k].n++; });
   const top=Object.keys(spots).map(k=>spots[k]).filter(s=>s.n>=2).sort((a,b)=>b.n-a.n).slice(0,8);
-  h+='<div class="secthead">Problem children · most repair requests</div><div class="panel">';
+  let probInner='';
   if(top.length){ const mx=top[0].n; top.forEach(s=>{ const pct=Math.max(Math.round(s.n/mx*100),10);
-    h+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+esc(s.office)+' — '+esc(s.chair||'?')+'</span><span class="ocount"><b>'+s.n+'</b> reqs</span></div><div class="obar"><i style="width:'+pct+'%;background:var(--high)"></i></div></div></div>'; }); }
-  else h+='<div class="none">Not enough repair history yet to flag repeat offenders.</div>';
-  h+='</div>';
-  // By type (clean categories)
-  h+='<div class="secthead">By type</div><div class="panel">';
-  Object.keys(cats).map(t=>[t,cats[t]]).sort((a,b)=>b[1]-a[1]).forEach(p=>{ h+='<div class="kv"><span>'+esc(p[0])+'</span><b>'+p[1]+'</b></div>'; });
+    probInner+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+esc(s.office)+' — '+esc(s.chair||'?')+'</span><span class="ocount"><b>'+s.n+'</b> reqs</span></div><div class="obar"><i style="width:'+pct+'%;background:var(--high)"></i></div></div></div>'; }); }
+  else probInner='<div class="none">Not enough repair history yet to flag repeat offenders.</div>';
+  h+=eqpSec('eqp:prob','Problem children · most repair requests',(top.length?String(top.length):''),probInner);
+  // By type (collapsible)
+  let typeInner='';
+  Object.keys(cats).map(t=>[t,cats[t]]).sort((a,b)=>b[1]-a[1]).forEach(p=>{ typeInner+='<div class="kv"><span>'+esc(p[0])+'</span><b>'+p[1]+'</b></div>'; });
+  h+=eqpSec('eqp:type','By type',Object.keys(cats).length+' kinds',typeInner);
+  return h;
+}
+function eqpSec(key,title,countLabel,inner){ const isOpen=!!openSecs[key];
+  return '<div class="sec'+(isOpen?'':' col')+'"><div class="sechead" data-sec="'+esc(key)+'"><span class="cw s-rank"></span><span class="snm">'+esc(title)+'</span>'+(countLabel?'<span class="sct">'+esc(countLabel)+'</span>':'')+'<span class="cv">▾</span></div><div class="cards">'+inner+'</div></div>'; }
+
+function assetDrillView(){
+  let h='<div class="drillback" data-drill="">‹ Back to equipment</div>';
+  if(assetDrill==='all'){ return h+assetBrowser(); }
+  const flagged=assets.map(a=>({a,f:replaceFlag(a)})).filter(x=>x.f.state===assetDrill);
+  flagged.sort((p,q)=>(p.f.left-q.f.left)||(q.f.reps-p.f.reps));
+  const title=(assetDrill==='replace'?'Replace now':'Coming due')+' · '+flagged.length+' item'+(flagged.length===1?'':'s');
+  h+='<div class="secthead">'+title+'</div><div class="panel">';
+  if(!flagged.length) h+='<div class="none">Nothing here right now.</div>';
+  else flagged.forEach(x=>{ const f=x.f,a=x.a;
+    h+='<div class="arow"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div><div class="am">'+esc(f.cat)+' · '+f.age+' yrs old · lasts ~'+f.life+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div>'+cdownChip(f)+'</div>'; });
   h+='</div>';
   return h;
 }
@@ -696,8 +736,7 @@ function assetBrowser(){
     h+='<div class="sec'+(isOpen?'':' col')+'"><div class="sechead" data-sec="'+esc(key)+'"><span class="cw s-rank"></span><span class="snm">'+esc(o)+'</span><span class="sct">'+items.length+'</span><span class="cv">▾</span></div><div class="cards">';
     items.slice().sort((a,b)=>(a.location||'').localeCompare(b.location||'')).forEach(a=>{ const age=assetAge(a); const fl=replaceFlag(a);
       const meta=[a.model,a.serial?'SN '+a.serial:'',a.number?'#'+a.number:''].filter(Boolean).map(esc).join(' · ');
-      const badge=fl.state?'<span class="fbadge '+fl.state+'">'+(fl.state==='replace'?'Replace':'Watch')+'</span>':'';
-      h+='<div class="arow"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+badge+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'</div>';
+      h+='<div class="arow"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(fl.state?cdownChip(fl):'')+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'</div>';
     });
     h+='</div></div>';
   });
@@ -990,7 +1029,8 @@ function wire(){
     filter=(filter===f?'':f); render(); });
   $('#wrap').querySelectorAll('[data-sort]').forEach(c=>c.onclick=()=>{ sortMode=c.dataset.sort; render(); });
   $('#wrap').querySelectorAll('[data-wh]').forEach(c=>c.onclick=()=>{ whMode=c.dataset.wh; render(); });
-  $('#wrap').querySelectorAll('[data-inv]').forEach(c=>c.onclick=()=>{ invMode=c.dataset.inv; render(); });
+  $('#wrap').querySelectorAll('[data-inv]').forEach(c=>c.onclick=()=>{ invMode=c.dataset.inv; assetDrill=''; render(); });
+  $('#wrap').querySelectorAll('[data-drill]').forEach(c=>c.onclick=()=>{ assetDrill=c.dataset.drill; window.scrollTo(0,0); render(); });
   const assrch=document.getElementById('as-search');
   if(assrch){ assrch.oninput=()=>{ const pos=assrch.selectionStart; assetSearch=assrch.value; render();
     const n=document.getElementById('as-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }
