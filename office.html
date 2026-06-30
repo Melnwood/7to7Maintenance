@@ -188,7 +188,7 @@ function renderList(issues, log){
       const n=daysAgo(i.date);
       const notes=log.filter(x=>x.issueId===i.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
       // crew updates = real typed notes (skip filler + auto status rows)
-      const crew=notes.filter(x=>x.note && !/^\(same job\)/i.test(x.note) && !/^status changed/i.test(x.note));
+      const crew=notes.filter(x=>x.note && !/^\(same job\)/i.test(x.note) && !/^status changed/i.test(x.note) && !/\[dupe-key:/i.test(x.note) && !/not a duplicate/i.test(x.note));
       const lastCrew=crew[crew.length-1];
       const histLine = i.history ? String(i.history).split('\n').map(x=>x.trim()).filter(Boolean).pop() : '';
       const det = 'Reported '+fmt(i.date)+(i.reporter?' by '+i.reporter:'')+

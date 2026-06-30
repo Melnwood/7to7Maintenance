@@ -57,6 +57,7 @@ exports.handler = async function (event) {
       if (b.action === 'add')    return resp(200, await addIssue(b, headers));
       if (b.action === 'status') return resp(200, await setStatus(b, headers));
       if (b.action === 'urgency')return resp(200, await setUrgency(b, headers));
+      if (b.action === 'notdupe')return resp(200, await markNotDupe(b, headers));
       if (b.action === 'note')   return resp(200, await addNote(b, headers));
       if (b.action === 'order')  return resp(200, await orderPart(b, headers));
       if (b.action === 'receive')return resp(200, await receivePart(b, headers));
@@ -155,6 +156,16 @@ async function setUrgency(b, headers){
   var r = await fetch(API + '/' + PROBLEMS + '/' + b.id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   await logWork({ problemId:b.id, who:b.who||'', note:'Priority changed to ' + cap(b.urgency) }, headers);
+  return { ok:true };
+}
+
+async function markNotDupe(b, headers){
+  // Persist a "not a duplicate" decision in the Work Log so it survives reloads & redeploys.
+  var ids = b.ids || (b.key ? String(b.key).split(',') : []);
+  var key = b.key || ids.join(',');
+  var anchor = ids[0] || '';
+  if (!anchor) return { ok:false, error:'no record id' };
+  await logWork({ problemId: anchor, who: b.who || '', note: 'Reviewed \u2014 not a duplicate [dupe-key:' + key + ']' }, headers);
   return { ok:true };
 }
 
