@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.06.29-outofservice -->
+<!-- BUILD STAMP: v2026.06.30-reports -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -249,6 +249,13 @@
   .note .d{font-size:.7rem;color:var(--muted);font-weight:700;margin-bottom:2px;}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:999px;font-weight:700;font-size:.9rem;opacity:0;transition:opacity .2s;z-index:60;}
   .toast.show{opacity:1;}
+  .toast-act{margin-left:12px;color:var(--blue);font-weight:800;cursor:pointer;text-decoration:underline;}
+  .export-btn{width:100%;border:1.5px solid var(--navy);background:#fff;color:var(--navy);font-weight:800;border-radius:11px;padding:11px;font-size:.9rem;margin-bottom:12px;cursor:pointer;}
+  .export-btn:active{background:#f0f5f8;}
+  .export-mini{border:1px solid var(--line);background:#fff;color:var(--navy);font-weight:700;border-radius:9px;padding:7px 11px;font-size:.78rem;margin:0 0 10px;cursor:pointer;}
+  .ckrow{display:flex;align-items:flex-start;gap:10px;padding:9px 2px;font-weight:600;cursor:pointer;}
+  .ckrow input{margin-top:3px;width:18px;height:18px;flex:0 0 auto;} .ckrow i{font-weight:500;color:var(--muted);font-size:.8rem;}
+  .lvllbl{font-size:.68rem;color:var(--muted);font-weight:600;margin-top:3px;text-align:center;}
   #gate{position:fixed;inset:0;z-index:100;background:linear-gradient(180deg,#7FD6F8,#57C2EF);display:flex;align-items:center;justify-content:center;padding:24px;}
   #gate.hide{display:none;}
   .gatecard{background:#fff;border-radius:18px;box-shadow:0 12px 40px rgba(20,32,43,.25);padding:26px 22px;max-width:340px;width:100%;text-align:center;}
@@ -299,7 +306,8 @@
 const OFFICES_FALLBACK=['Alamo Ranch','Braun','Bulverde','Cibolo','Forum','Leon Springs','Mission Oaks','Potranco','Sahota','Singing Hills','Stone Oak','TPC'];
 let officeNames=OFFICES_FALLBACK.slice();
 let assets=[], life=[], lifeMap={};
-const CREW=['Adrian Ellenwood','Maintenance Tech 1','Maintenance Tech 2'];
+const CREW=['Adrian Ellenwood','Grumpy'];
+let crew=CREW.slice();
 const STATUSES=['New','In progress','Pending','Part ordered','Fixed'];
 const FLOW=['New','In progress','Pending','Part ordered'];
 const PRILABEL={high:'High',medium:'Medium',low:'Low'};
@@ -310,12 +318,14 @@ const MS=86400000;
 let issues=[], log=[], parts=[], tab='board', filter='', selOffice=null, sortMode='priority';
 let pendingPhoto=null;
 let whMode='order', whSearch='';
-let invMode='parts', assetSearch='', assetDrill='';
+let invMode='parts', assetSearch='', assetDrill='', showReports=false;
 let openSecs={'__replacesoon':true};
 let boardMode='status';
 let dismissed={}, showDupes=false, showOfficeDupes=false;
 
-function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1900);}
+function toast(t,actionLabel,actionFn){const e=$('#toast');e.innerHTML='';e.appendChild(document.createTextNode(t));
+  if(actionLabel&&actionFn){const b=document.createElement('span');b.className='toast-act';b.textContent=actionLabel;b.onclick=()=>{e.classList.remove('show');actionFn();};e.appendChild(b);}
+  e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),actionLabel?4500:1900);}
 function dObj(s){ if(!s) return null; const x=new Date(s+'T00:00'); return isNaN(x)?null:x; }
 function today0(){ const t=new Date(); return new Date(t.getFullYear(),t.getMonth(),t.getDate()); }
 function daysAgo(s){ const d=dObj(s); return d?Math.round((today0()-d)/MS):null; }
@@ -355,6 +365,8 @@ async function load(){
     issues=d.issues||[]; log=d.worklog||[]; parts=d.parts||[]; assets=d.assets||[];
     life=d.life||[]; lifeMap=Object.assign({},LIFE_DEFAULT);
     life.forEach(r=>{ if(r&&r.category&&typeof r.years==='number'&&!isNaN(r.years)) lifeMap[r.category]=r.years; });
+    const ppl=(d.people||[]).filter(p=>p&&p.active&&p.name).map(p=>p.name);
+    crew = ppl.length? ppl : CREW.slice();
     // Rebuild "not a duplicate" decisions from the Work Log so they persist across reloads/redeploys.
     dismissed={};
     log.forEach(l=>{ const m=/\[dupe-key:([^\]]+)\]/.exec(l.note||''); if(m) dismissed[m[1]]=true; });
@@ -362,7 +374,7 @@ async function load(){
     render();
   }catch(e){ $('#wrap').innerHTML='<div class="empty">Could not load.<br><span class="muted">'+esc(e.message||'')+'</span></div>'; }
 }
-$('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{ tab=b.dataset.t; showDupes=false; selOffice=null; showOfficeDupes=false; assetDrill='';
+$('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{ tab=b.dataset.t; showDupes=false; selOffice=null; showOfficeDupes=false; assetDrill=''; showReports=false;
   $('#tabs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
 
 function render(){
@@ -372,7 +384,7 @@ function render(){
     $('#sub').textContent=open.length+' open'+(partsWait.length?' · '+partsWait.length+' on parts':'');
     let body='';
     if(tab==='board') body=viewBoard(open);
-    else if(tab==='recent') body=viewRecent();
+    else if(tab==='recent') body=showReports?viewReports():viewRecent();
     else if(tab==='warehouse') body=viewInventory();
     else if(tab==='manage') body=viewManage();
     else body=viewOffices();
@@ -588,14 +600,101 @@ function dupRow(i){ const n=daysAgo(i.date);
     '<span class="loc">'+esc(i.chair||'—')+'</span><span class="pr">'+esc(i.problem)+'</span>'+
     '<span class="ag">'+ageStr(n)+'</span></div>'; }
 
+function inRangeStr(d,from,to){ if(!d) return false; d=String(d).slice(0,10); if(from&&d<from) return false; if(to&&d>to) return false; return true; }
+function daysBetween(a,b){ const x=dObj(a),y=dObj(b); if(!x||!y) return null; return Math.round((y-x)/MS); }
+function lastWorkFor(id){ const ws=log.filter(w=>w.issueId===id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  let note='',who='',parts='';
+  ws.forEach(w=>{ if(!who&&w.who) who=w.who; if(!parts&&w.partNumber) parts=w.partNumber+(w.qty?(' ×'+w.qty):''); });
+  for(let k=0;k<ws.length;k++){ const n=cleanNote(ws[k].note); if(n && !/^(Status changed to|Priority changed to|Reviewed —|Duplicate of)/.test(n)){ note=n; break; } }
+  return {note:note,who:who,parts:parts}; }
+function reportData(office,from,to,wantDone,wantOpen){
+  const offOk=o=>(!office||office==='All')?true:(o===office);
+  const completed = wantDone ? issues.filter(i=>offOk(i.office)&&i.status==='Fixed'&&inRangeStr(i.fixed||i.date,from,to)) : [];
+  const open = wantOpen ? issues.filter(i=>offOk(i.office)&&i.status!=='Fixed') : [];
+  return {completed:completed, open:open};
+}
+function reportCSV(office,from,to,wantDone,wantOpen){
+  const r=reportData(office,from,to,wantDone,wantOpen);
+  const head=['Section','Office','Chair/Area','Problem','What was done / status','Who','Parts','Reported','Fixed'];
+  const lines=[head.map(csvCell).join(',')];
+  r.completed.slice().sort((a,b)=>(a.office||'').localeCompare(b.office||'')||(b.fixed||'').localeCompare(a.fixed||'')).forEach(i=>{ const w=lastWorkFor(i.id);
+    lines.push(['Completed',i.office,i.chair,i.problem,(w.note||i.history||''),w.who,w.parts,i.date,i.fixed].map(csvCell).join(',')); });
+  r.open.slice().sort((a,b)=>(a.office||'').localeCompare(b.office||'')||(a.date||'').localeCompare(b.date||'')).forEach(i=>{ const w=lastWorkFor(i.id);
+    lines.push(['Open',i.office,i.chair,i.problem,(i.status+(w.note?(' — '+w.note):'')),w.who,'',i.date,''].map(csvCell).join(',')); });
+  return lines.join('\r\n');
+}
+function reportPrintHTML(office,from,to,wantDone,wantOpen){
+  const r=reportData(office,from,to,wantDone,wantOpen);
+  const scope=(office&&office!=='All')?office:'All offices';
+  const range=(from||to)?((from||'…')+' to '+(to||'…')):'All dates';
+  let ds=[]; r.completed.forEach(i=>{ const d=daysBetween(i.date,i.fixed); if(d!=null&&d>=0) ds.push(d); });
+  const avg = ds.length? (ds.reduce((a,b)=>a+b,0)/ds.length).toFixed(1) : '—';
+  const byOff=list=>{ const m={}; list.forEach(i=>{ (m[i.office||'(no office)']=m[i.office||'(no office)']||[]).push(i); }); return m; };
+  const esc2=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let body='';
+  body+='<div class="rh"><div><h1>7to7 Maintenance — Work Report</h1><div class="sub">'+esc2(scope)+' · '+esc2(range)+'</div></div><div class="gen">Generated '+new Date().toLocaleDateString()+'</div></div>';
+  body+='<div class="cards">';
+  if(wantDone) body+='<div class="kpi"><b>'+r.completed.length+'</b><span>Completed</span></div><div class="kpi"><b>'+avg+'</b><span>Avg days to fix</span></div>';
+  if(wantOpen) body+='<div class="kpi"><b>'+r.open.length+'</b><span>Still open</span></div>';
+  body+='</div>';
+  const sect=(title,list,done)=>{ if(!list.length) return '<h2>'+title+'</h2><p class="empty">None in this period.</p>';
+    let s='<h2>'+title+' ('+list.length+')</h2>'; const m=byOff(list);
+    Object.keys(m).sort().forEach(o=>{ s+='<h3>'+esc2(o)+' <span class="n">'+m[o].length+'</span></h3><table><thead><tr><th>Chair/Area</th><th>Problem</th><th>'+(done?'What was done':'Status / latest update')+'</th><th>Who</th><th>'+(done?'Fixed':'Reported')+'</th></tr></thead><tbody>';
+      m[o].slice().sort((a,b)=>done?((b.fixed||'').localeCompare(a.fixed||'')):((a.date||'').localeCompare(b.date||''))).forEach(i=>{ const w=lastWorkFor(i.id);
+        const didtxt = done ? (w.note||i.history||'—') : (i.status+(w.note?(' — '+w.note):''));
+        s+='<tr><td>'+esc2(i.chair)+'</td><td>'+esc2(i.problem)+'</td><td>'+esc2(didtxt)+(w.parts?' <i>('+esc2(w.parts)+')</i>':'')+'</td><td>'+esc2(w.who)+'</td><td>'+esc2(done?i.fixed:i.date)+'</td></tr>'; });
+      s+='</tbody></table>'; });
+    return s; };
+  if(wantDone) body+=sect('Completed work',r.completed,true);
+  if(wantOpen) body+=sect('Still open',r.open,false);
+  const css='*{box-sizing:border-box}body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#14202b;margin:0;padding:28px;}'
+   +'h1{font-size:20px;margin:0;}.sub{color:#1E60A8;font-weight:700;margin-top:3px;}.gen{color:#6b7a89;font-size:12px;}'
+   +'.rh{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0E7C86;padding-bottom:12px;margin-bottom:16px;}'
+   +'.cards{display:flex;gap:12px;margin-bottom:8px;}.kpi{flex:1;border:1px solid #d9e1e7;border-radius:10px;padding:12px;text-align:center;}'
+   +'.kpi b{display:block;font-size:26px;}.kpi span{font-size:11px;color:#6b7a89;text-transform:uppercase;letter-spacing:.04em;}'
+   +'h2{font-size:15px;margin:22px 0 6px;border-bottom:1px solid #d9e1e7;padding-bottom:4px;}h3{font-size:13px;margin:14px 0 5px;color:#1E60A8;}h3 .n{color:#6b7a89;font-weight:600;}'
+   +'table{width:100%;border-collapse:collapse;font-size:12px;}th{text-align:left;color:#6b7a89;font-size:10px;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #d9e1e7;padding:5px 6px;}'
+   +'td{border-bottom:1px solid #eef2f5;padding:6px;vertical-align:top;}td i{color:#6b7a89;}.empty{color:#6b7a89;font-size:12px;}'
+   +'.noprint{margin-bottom:14px;}button{background:#0E7C86;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;}'
+   +'@media print{.noprint{display:none;}body{padding:0;}}';
+  return '<!doctype html><html><head><meta charset="utf-8"><title>7to7 Work Report</title><style>'+css+'</style></head><body>'
+    +'<div class="noprint"><button onclick="window.print()">Print / Save as PDF</button></div>'+body+'</body></html>';
+}
+function openReport(office,from,to,wantDone,wantOpen){
+  const w=window.open('','_blank');
+  if(!w){ toast('Allow pop-ups to open the report'); return; }
+  w.document.open(); w.document.write(reportPrintHTML(office,from,to,wantDone,wantOpen)); w.document.close();
+}
+function viewReports(){
+  let h='<div class="drillback" data-back="reports">‹ Back to activity</div>';
+  h+='<div class="vhdr">Reports</div>';
+  h+='<div class="hint">Pick an office and a date range, choose what to include, then download a spreadsheet or open a printable report for the bosses.</div>';
+  h+='<div class="panel">';
+  h+='<label>Office</label><select id="rp-office"><option>All</option>'+officeNames.map(o=>'<option>'+esc(o)+'</option>').join('')+'</select>';
+  h+='<label>From</label><input type="date" id="rp-from">';
+  h+='<label>To</label><input type="date" id="rp-to">';
+  h+='<label style="margin-top:12px">Include</label>';
+  h+='<label class="ckrow"><input type="checkbox" id="rp-done" checked> <span><b>Completed work</b><br><i>fixed within the date range</i></span></label>';
+  h+='<label class="ckrow"><input type="checkbox" id="rp-open" checked> <span><b>Still open / ongoing</b><br><i>everything outstanding as of today</i></span></label>';
+  h+='<button class="primary-btn" id="rp-csv" style="margin-top:14px">⬇ Download CSV</button>';
+  h+='<button class="export-btn" id="rp-print">📄 Open printable report</button>';
+  h+='</div>';
+  return h;
+}
+
 function viewRecent(){
   const ev=[];
   issues.forEach(i=>{ if(i.fixed) ev.push({date:i.fixed,kind:'Fixed',i}); if(i.date) ev.push({date:i.date,kind:'Reported',i}); });
   log.forEach(w=>{ if(w.date&&(w.note||w.partNumber)){ const i=issues.find(x=>x.id===w.issueId); ev.push({date:w.date,kind:'Work',w,i}); } });
   ev.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const top=ev.slice(0,50); if(!top.length) return '<div class="empty">No activity yet.</div>';
-  let h='',last='';
-  top.forEach(e=>{ const lab=dayLabel(e.date); if(lab!==last){ h+='<div class="dayhdr">'+lab+'</div>'; last=lab; } h+=actRow(e); });
+  const buckets={today:[],week:[],month:[]};
+  ev.forEach(e=>{ const n=daysAgo(e.date); if(n==null) return; if(n===0)buckets.today.push(e); else if(n<=6)buckets.week.push(e); else if(n<=31)buckets.month.push(e); });
+  let h='<button class="export-btn" id="rep-open">📄 Reports — export work by office &amp; date</button>';
+  const sec=(key,title,list)=>{ let inner=''; if(list.length) list.slice(0,80).forEach(e=>inner+=actRow(e)); else inner='<div class="none">Nothing here.</div>';
+    return nestSec(key,title,'<span class="sct">'+list.length+'</span>',inner); };
+  h+=sec('__act_today','Today',buckets.today);
+  h+=sec('__act_week','This week',buckets.week);
+  h+=sec('__act_month','This month',buckets.month);
   return h;
 }
 function dayLabel(s){ const n=daysAgo(s); if(n===0)return'Today'; if(n===1)return'Yesterday'; const d=dObj(s); return d?d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):s; }
@@ -609,7 +708,7 @@ function viewInventory(){
   let h='<div class="sortrow"><div class="seg">'+
     '<button class="'+(invMode==='parts'?'on':'')+'" data-inv="parts">Parts</button>'+
     '<button class="'+(invMode==='assets'?'on':'')+'" data-inv="assets">Equipment</button></div></div>';
-  if(invMode==='assets') return h+(assetDrill?assetDrillView():(assetsDashboard()+assetBrowser()));
+  if(invMode==='assets') return h+'<button class="export-btn" id="exp-all">⬇ Export master list (CSV)</button>'+(assetDrill?assetDrillView():(assetsDashboard()+assetBrowser()));
   return h+partsDashboard()+viewWarehouse();
 }
 
@@ -663,13 +762,15 @@ function normCat(t){ const s=String(t||'').toLowerCase();
   return (String(t||'').trim())||'Other';
 }
 function repairsFor(a){ const nl=normChair(a.location); if(!nl) return 0; return issues.filter(i=>i.office===a.office && normChair(i.chair)===nl).length; }
-function replaceFlag(a){ const age=assetAge(a); if(age==null) return {state:'',age:null,life:null,left:null,cat:normCat(a.asset),reps:0};
-  const cat=normCat(a.asset), life=lifeMap[cat], reps=repairsFor(a);
-  if(life==null) return {state:'',age:age,life:null,left:null,cat:cat,reps:reps};
+function replaceFlag(a){ const age=assetAge(a); if(age==null) return {state:'',age:null,life:null,left:null,cat:normCat(a.asset),reps:0,custom:false};
+  const cat=normCat(a.asset), reps=repairsFor(a);
+  const ov=parseFloat(a.lifeOverride); const custom=(!isNaN(ov)&&ov>0);
+  const life=custom?ov:lifeMap[cat];
+  if(life==null) return {state:'',age:age,life:null,left:null,cat:cat,reps:reps,custom:false};
   const left=life-age; var state='';
   if(left<=0) state='replace';            // hit or past expected life
   else if(left<=3) state='watch';         // 1–3 years left
-  return {state:state,age:age,life:life,left:left,cat:cat,reps:reps}; }
+  return {state:state,age:age,life:life,left:left,cat:cat,reps:reps,custom:custom}; }
 function cdownChip(f){ if(f.left==null) return '';
   if(f.left>0) return '<span class="cdown green">'+f.left+' yr'+(f.left>1?'s':'')+' left</span>';
   if(f.left===0) return '<span class="cdown red">due now</span>';
@@ -701,6 +802,26 @@ function healthCard(list,label){ const m=fleetMetrics(list); const v=verdictFor(
     '<div class="spectrum">'+spectrumHtml(m.b,m.total)+'</div>'+legendHtml(m.b)+
     '<div class="fhnote">Average age '+(m.avgAge!=null?m.avgAge.toFixed(1)+' yrs':'—')+(m.b.unknown?' · '+m.b.unknown+' with no date':'')+'</div>'+
     '</div>'; }
+
+function csvCell(v){ v=(v==null?'':String(v)); return '"'+v.replace(/"/g,'""')+'"'; }
+function assetsToCSV(list){
+  const head=['Office','Location','Type','Category','Make/Model','Serial Number','Asset Number','Manufacture Date','Manufacturer','Status','Age (yrs)','Expected life (yrs)','Life override (yrs)'];
+  const lines=[head.map(csvCell).join(',')];
+  list.slice().sort((a,b)=>(a.office||'').localeCompare(b.office||'')||(a.location||'').localeCompare(b.location||'')).forEach(a=>{
+    const age=assetAge(a), f=replaceFlag(a);
+    const row=[a.office,a.location,a.asset,normCat(a.asset),a.model,a.serial,a.number,a.date,a.maker||'',
+      (isOOS(a)?'Out of service':'In service'),(age==null?'':age),(f.life==null?'':f.life),(a.lifeOverride||'')];
+    lines.push(row.map(csvCell).join(','));
+  });
+  return lines.join('\r\n');
+}
+function downloadCSV(name,text){
+  try{ const blob=new Blob(['\ufeff'+text],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),1500);
+    toast('Exported '+name);
+  }catch(e){ toast('Could not export'); }
+}
 
 function assetsDashboard(){
   if(!assets.length) return '<div class="empty">No equipment loaded yet.</div>';
@@ -755,7 +876,7 @@ function assetsDashboard(){
         '<span class="cv">▾</span></div><div class="cards">';
       rows.forEach(x=>{ const f=x.f,a=x.a;
         catHtml+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div>'+
-          '<div class="am">'+f.age+' yrs old · lasts ~'+f.life+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div>'+
+          '<div class="am">'+f.age+' yrs old · lasts ~'+f.life+(f.custom?' (custom)':'')+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div>'+
           cdownChip(f)+'<span class="rchev">›</span></div>'; });
       catHtml+='</div></div>';
     });
@@ -822,7 +943,7 @@ function assetDrillView(){
   h+='<div class="secthead">'+title+'</div><div class="panel">';
   if(!flagged.length) h+='<div class="none">Nothing here right now.</div>';
   else flagged.forEach(x=>{ const f=x.f,a=x.a;
-    h+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div><div class="am">'+esc(f.cat)+' · '+f.age+' yrs old · lasts ~'+f.life+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div>'+cdownChip(f)+'<span class="rchev">›</span></div>'; });
+    h+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div><div class="am">'+esc(f.cat)+' · '+f.age+' yrs old · lasts ~'+f.life+(f.custom?' (custom)':'')+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div>'+cdownChip(f)+'<span class="rchev">›</span></div>'; });
   h+='</div>';
   return h;
 }
@@ -834,13 +955,22 @@ function assetBrowserInner(){
   if(q) list=assets.filter(a=>(((a.asset||'')+' '+(a.model||'')+' '+(a.serial||'')+' '+(a.number||'')+' '+(a.location||'')+' '+(a.office||'')).toLowerCase().indexOf(q)>=0));
   if(!list.length) return h+'<div class="empty">No equipment matches that search.</div>';
   const byOff={}; list.forEach(a=>{ const o=a.office||'(no office)'; (byOff[o]=byOff[o]||[]).push(a); });
-  Object.keys(byOff).sort().forEach(o=>{ const items=byOff[o]; const key='asset:'+o; const isOpen=!!openSecs[key]||!!q;
+  Object.keys(byOff).sort().forEach(o=>{ const all=byOff[o]; const items=all.filter(a=>!isOOS(a)); const oosItems=all.filter(isOOS);
+    const key='asset:'+o; const isOpen=!!openSecs[key]||!!q;
     h+='<div class="sec'+(isOpen?'':' col')+'"><div class="sechead" data-sec="'+esc(key)+'"><span class="cw s-rank"></span><span class="snm">'+esc(o)+'</span><span class="sct">'+items.length+'</span><span class="cv">▾</span></div><div class="cards">';
-    h+=healthCard(items,o+' health');
+    h+=healthCard(all,o+' health');
+    h+='<button class="export-mini" data-expoff="'+esc(o)+'">⬇ Export this office (CSV)</button>';
     items.slice().sort((a,b)=>(a.location||'').localeCompare(b.location||'')).forEach(a=>{ const age=assetAge(a); const fl=replaceFlag(a);
       const meta=[a.model,a.serial?'SN '+a.serial:'',a.number?'#'+a.number:''].filter(Boolean).map(esc).join(' · ');
-      h+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(isOOS(a)?'<span class="fbadge oos">Out</span>':(fl.state?cdownChip(fl):''))+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'<span class="rchev">›</span></div>';
+      h+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(fl.state?cdownChip(fl):'')+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'<span class="rchev">›</span></div>';
     });
+    if(oosItems.length){ const okey='oos:'+o; const oOpen=!!openSecs[okey]||!!q;
+      h+='<div class="sec'+(oOpen?'':' col')+'" style="margin-top:8px"><div class="sechead" data-sec="'+esc(okey)+'"><span class="cw" style="background:#cdd5dc"></span><span class="snm">Out of service</span><span class="sct">'+oosItems.length+'</span><span class="cv">▾</span></div><div class="cards">';
+      oosItems.slice().sort((a,b)=>(a.location||'').localeCompare(b.location||'')).forEach(a=>{ const age=assetAge(a);
+        const meta=[a.model,a.serial?'SN '+a.serial:'',a.number?'#'+a.number:''].filter(Boolean).map(esc).join(' · ');
+        h+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div><span class="fbadge oos">Out</span>'+(age!=null?'<div class="aage">'+age+'y</div>':'')+'<span class="rchev">›</span></div>'; });
+      h+='</div></div>';
+    }
     h+='</div></div>';
   });
   return h;
@@ -890,7 +1020,7 @@ function warehouseInventory(){
   const q=whSearch.trim().toLowerCase();
   let list=parts.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   if(q) list=list.filter(p=>((p.name||'')+' '+(p.number||'')+' '+(p.vendor||'')+' '+(p.bin||'')).toLowerCase().indexOf(q)>=0);
-  h+='<div class="hint">'+list.length+(q?' match'+(list.length===1?'':'es'):' parts')+'. Tap a part to order, receive, or fix the count.</div>';
+  h+='<div class="hint">'+list.length+(q?' match'+(list.length===1?'':'es'):' parts')+'. Tap a part to order, receive, fix the count, or set min / max.</div>';
   if(!list.length) return h+'<div class="empty">No parts match.</div>';
   list.forEach(p=>{
     h+='<div class="prow'+(p.orderNow?' low':'')+'" data-part="'+esc(p.number)+'">'+
@@ -917,14 +1047,31 @@ function openPart(number){
   }
   h+='<label style="margin-top:16px">Fix the on-hand count</label>'+
      '<div class="twocol"><div><input id="pt-adj" type="number" min="0" placeholder="count" value="'+esc(p.inStock)+'"></div>'+
-     '<div><button class="primary-btn" style="margin-top:0;background:var(--navy)" id="pt-set">Set count</button></div></div>'+
+     '<div><button class="primary-btn" style="margin-top:0;background:var(--navy)" id="pt-set">Set count</button></div></div>';
+  h+='<label style="margin-top:16px">Reorder levels</label>'+
+     '<div class="twocol"><div><input id="pt-min" type="number" min="0" placeholder="min" value="'+(p.reorderAt===''||p.reorderAt==null?'':esc(p.reorderAt))+'"><div class="lvllbl">min · reorder at</div></div>'+
+     '<div><input id="pt-max" type="number" min="0" placeholder="max" value="'+(typeof p.max==='number'?esc(p.max):'')+'"><div class="lvllbl">max · target</div></div></div>'+
+     '<button class="primary-btn" style="background:var(--navy)" id="pt-lvl">Save min / max</button>'+
      '<button class="ghost-btn" id="pt-close">Done</button>';
   $('#sheet').innerHTML=h;
   const oq=document.getElementById('pt-order'); if(oq) oq.onclick=()=>doOrder(p.number);
   const rc=document.getElementById('pt-receive'); if(rc) rc.onclick=()=>doReceive(p.number);
   document.getElementById('pt-set').onclick=()=>doAdjust(p.number);
+  const lv=document.getElementById('pt-lvl'); if(lv) lv.onclick=()=>doSaveLevels(p.number);
   document.getElementById('pt-close').onclick=hide;
   show();
+}
+async function doSaveLevels(number){
+  const minV=document.getElementById('pt-min').value, maxV=document.getElementById('pt-max').value;
+  if(minV===''&&maxV===''){ toast('Enter a min and/or max'); return; }
+  if(minV!==''&&maxV!==''&&Number(maxV)<Number(minV)){ toast('Max should be at least the min'); return; }
+  const btn=document.getElementById('pt-lvl'); btn.disabled=true; btn.textContent='Saving…';
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'editpart',number:number,reorderAt:minV,max:maxV})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not save');
+    const p=partByNumber(number); if(p){ if(minV!=='') p.reorderAt=Math.round(Number(minV)); if(maxV!=='') p.max=Math.round(Number(maxV));
+      p.orderNow=(typeof p.inStock==='number'&&typeof p.reorderAt==='number'&&p.inStock<=p.reorderAt); }
+    toast('Min / max saved'); openPart(number); render();
+  }catch(e){ btn.disabled=false; btn.textContent='Save min / max'; toast('Could not save'); }
 }
 async function doOrder(number){
   const q=Number(document.getElementById('pt-oqty').value); if(!(q>0)){ document.getElementById('pt-oqty').focus(); return; }
@@ -996,11 +1143,39 @@ function viewManage(){
   let h='<div class="hint">Add new offices and their equipment here. Anything you add shows up across the app right away — no spreadsheet needed.</div>';
   h+='<button class="addpart-wide" id="mg-addoffice">+ Add a new office</button>';
   h+='<button class="addpart-wide" id="mg-addequip">+ Add equipment to an office</button>';
+  h+='<button class="addpart-wide" id="mg-addperson">+ Add a maintenance person</button>';
+  h+='<div class="vhdr">Maintenance crew<span class="vn">'+crew.length+'</span></div>';
+  h+='<div class="hint">These names show up in the “Who did the work?” list. Add or remove people anytime.</div><div class="panel">';
+  if(crew.length){ crew.forEach(c=>{ h+='<div class="kv"><span>'+esc(c)+'</span></div>'; }); }
+  else h+='<div class="none">No crew added yet.</div>';
+  h+='</div>';
   h+='<div class="vhdr">Offices<span class="vn">'+officeNames.length+'</span></div>';
   h+='<div class="hint">Tap an office to add equipment to it.</div><div class="panel"><div class="ogrid">';
   officeNames.forEach(o=>{ h+='<button class="ocard clear" data-mo="'+esc(o)+'"><span class="nm">'+esc(o)+'</span><span class="ct">'+(cnt[o]||0)+' item'+((cnt[o]||0)===1?'':'s')+'</span></button>'; });
   h+='</div></div>';
   return h;
+}
+
+function openAddPerson(){
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 4px">Add a maintenance person</h2>'+
+    '<div class="hint">They\u2019ll appear in the “Who did the work?” list right away.</div>'+
+    '<label>Name</label><input id="pp-name" placeholder="e.g. Jordan Smith">'+
+    '<div id="pp-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="pp-save">Add person</button>'+
+    '<button class="ghost-btn" id="pp-cancel">Cancel</button>';
+  document.getElementById('pp-save').onclick=doAddPerson;
+  document.getElementById('pp-cancel').onclick=hide;
+  show(); setTimeout(()=>document.getElementById('pp-name').focus(),60);
+}
+async function doAddPerson(){
+  const name=(document.getElementById('pp-name').value||'').trim(); const err=document.getElementById('pp-err');
+  if(!name){ err.textContent='Enter a name.'; return; }
+  if(crew.some(c=>c.toLowerCase()===name.toLowerCase())){ err.textContent='That person is already on the list.'; return; }
+  const btn=document.getElementById('pp-save'); btn.disabled=true; btn.textContent='Adding…';
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'addperson',name:name})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not add');
+    crew.push(name); toast('Added '+name); hide(); render();
+  }catch(e){ btn.disabled=false; btn.textContent='Add person'; err.textContent=String(e.message||'Could not add'); }
 }
 
 function officeSelectHTML(sel){
@@ -1116,6 +1291,7 @@ function openAsset(id){
     '<label>Serial number</label><input id="ea-serial" value="'+esc(a.serial||'')+'">'+
     '<label>Asset number</label><input id="ea-num" value="'+esc(a.number||'')+'">'+
     '<label>Manufacture date <span class="lmut">(year is enough, e.g. 2018)</span></label><input id="ea-date" value="'+esc(a.date||'')+'">'+
+    '<label>Expected life <span class="lmut">(years for this exact unit \u2014 leave blank to use the '+esc(normCat(a.asset))+' default of '+(lifeMap[normCat(a.asset)]!=null?lifeMap[normCat(a.asset)]:'\u2014')+')</span></label><input id="ea-life" inputmode="numeric" value="'+esc(a.lifeOverride||'')+'" placeholder="'+(lifeMap[normCat(a.asset)]!=null?lifeMap[normCat(a.asset)]:'')+'">'+
     '<div id="ea-err" class="gateerr" style="text-align:left"></div>'+
     '<button class="primary-btn" id="ea-save">Save changes</button>'+
     (isOOS(a)
@@ -1140,12 +1316,14 @@ async function doSaveAsset(id){
     serial:(document.getElementById('ea-serial').value||'').trim(),
     number:(document.getElementById('ea-num').value||'').trim(),
     date:(document.getElementById('ea-date').value||'').trim() };
+  const lifeRaw=(document.getElementById('ea-life').value||'').trim();
+  payload.lifeOverride = lifeRaw==='' ? null : (parseFloat(lifeRaw)||null);
   if(!payload.asset){ err.textContent='Type can\u2019t be empty.'; return; }
   const btn=document.getElementById('ea-save'); btn.disabled=true; btn.textContent='Saving…';
   try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
     const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not save');
     const a=assets.find(x=>x.id===id);
-    if(a){ a.office=office; a.location=payload.location; a.asset=payload.asset; a.model=payload.model; a.serial=payload.serial; a.number=payload.number; a.date=payload.date; }
+    if(a){ a.office=office; a.location=payload.location; a.asset=payload.asset; a.model=payload.model; a.serial=payload.serial; a.number=payload.number; a.date=payload.date; a.lifeOverride=(payload.lifeOverride==null?'':payload.lifeOverride); }
     if(office && !officeNames.some(o=>o.toLowerCase()===office.toLowerCase())){ officeNames.push(office); officeNames.sort(); }
     toast('Saved'); hide(); render();
   }catch(e){ btn.disabled=false; btn.textContent='Save changes'; err.textContent=String(e.message||'Could not save'); }
@@ -1156,7 +1334,9 @@ async function doSetAssetStatus(id,status){
   try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'editasset',id:id,status:status})});
     const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not update');
     const a=assets.find(x=>x.id===id); if(a) a.status=status;
-    toast(status==='Out of service'?'Marked out of service':'Back in service'); hide(); render();
+    hide(); render();
+    if(status==='Out of service') toast('Moved to Out of service','View list',()=>{ assetDrill='oos'; window.scrollTo(0,0); render(); });
+    else toast('Back in service');
   }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Try again'; } const err=document.getElementById('ea-err'); if(err) err.textContent=String(e.message||'Could not update'); }
 }
 function viewOffices(){
@@ -1194,6 +1374,9 @@ function wire(){
   $('#wrap').querySelectorAll('[data-inv]').forEach(c=>c.onclick=()=>{ invMode=c.dataset.inv; assetDrill=''; render(); });
   $('#wrap').querySelectorAll('[data-drill]').forEach(c=>c.onclick=()=>{ assetDrill=c.dataset.drill; window.scrollTo(0,0); render(); });
   $('#wrap').querySelectorAll('[data-aid]').forEach(c=>c.onclick=()=>openAsset(c.dataset.aid));
+  const expAll=document.getElementById('exp-all'); if(expAll) expAll.onclick=()=>downloadCSV('7to7-equipment-all.csv',assetsToCSV(assets));
+  $('#wrap').querySelectorAll('[data-expoff]').forEach(c=>c.onclick=()=>{ const o=c.dataset.expoff;
+    downloadCSV('7to7-equipment-'+o.replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.csv', assetsToCSV(assets.filter(a=>(a.office||'(no office)')===o))); });
   const assrch=document.getElementById('as-search');
   if(assrch){ assrch.oninput=()=>{ const pos=assrch.selectionStart; assetSearch=assrch.value; render();
     const n=document.getElementById('as-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }
@@ -1201,6 +1384,20 @@ function wire(){
   const ap=document.getElementById('wh-addpart'); if(ap) ap.onclick=openAddPart;
   const mo=document.getElementById('mg-addoffice'); if(mo) mo.onclick=()=>openAddOffice();
   const me=document.getElementById('mg-addequip'); if(me) me.onclick=()=>openAddEquip('');
+  const repOpen=document.getElementById('rep-open'); if(repOpen) repOpen.onclick=()=>{ showReports=true; window.scrollTo(0,0); render(); };
+  const repBack=$('#wrap').querySelector('[data-back="reports"]'); if(repBack) repBack.onclick=()=>{ showReports=false; render(); };
+  if(document.getElementById('rp-csv')){
+    const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const t=new Date(); const f=document.getElementById('rp-from'), to=document.getElementById('rp-to');
+    if(f&&!f.value) f.value=iso(new Date(t.getFullYear(),t.getMonth(),1));
+    if(to&&!to.value) to.value=iso(t);
+    const gv=id=>{ const e=document.getElementById(id); return e?e.value:''; };
+    const args=()=>[gv('rp-office'),gv('rp-from'),gv('rp-to'),document.getElementById('rp-done').checked,document.getElementById('rp-open').checked];
+    document.getElementById('rp-csv').onclick=()=>{ const a=args(); if(!a[3]&&!a[4]){ toast('Tick completed and/or open'); return; }
+      downloadCSV('7to7-report-'+(a[0]==='All'?'all':a[0].replace(/[^a-z0-9]+/gi,'-').toLowerCase())+'.csv', reportCSV(a[0],a[1],a[2],a[3],a[4])); };
+    document.getElementById('rp-print').onclick=()=>{ const a=args(); if(!a[3]&&!a[4]){ toast('Tick completed and/or open'); return; } openReport(a[0],a[1],a[2],a[3],a[4]); };
+  }
+  const mp=document.getElementById('mg-addperson'); if(mp) mp.onclick=()=>openAddPerson();
   $('#wrap').querySelectorAll('[data-mo]').forEach(c=>c.onclick=()=>openAddEquip(c.dataset.mo));
   const ws=document.getElementById('wh-search');
   if(ws){ ws.oninput=()=>{ const pos=ws.selectionStart; whSearch=ws.value; render();
@@ -1235,7 +1432,7 @@ function openDetail(id){
     (i.history?'<label>History (from the logs)</label><div class="hist">'+esc(i.history)+'</div>':'')+
     '<label>Work log</label><div>'+(notes.length?notes.map(nt=>'<div class="note"><div class="d">'+fmt(nt.date)+(nt.who?' · '+esc(nt.who):'')+(nt.partNumber?' · part '+esc(nt.partNumber)+(nt.qty?' ×'+nt.qty:''):'')+'</div>'+esc(cleanNote(nt.note))+(nt.photo?'<img class="notephoto" src="'+esc(nt.photo)+'">':'')+'</div>').join(''):'<div class="note" style="color:var(--muted)">No work logged here yet</div>')+'</div>'+
     '<label>Log work done</label>'+
-    '<select id="d-who"><option value="">Who did the work?</option>'+CREW.map(c=>'<option>'+c+'</option>').join('')+'</select>'+
+    '<select id="d-who"><option value="">Who did the work?</option>'+crew.map(c=>'<option>'+esc(c)+'</option>').join('')+'</select>'+
     '<textarea id="d-note" placeholder="What did you do?" style="margin-top:8px"></textarea>'+
     '<label>Parts used</label><div id="d-parts"></div>'+
     '<button type="button" class="addpart-btn" id="d-addpart">+ add another part</button>'+
