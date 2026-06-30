@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.06.29-inventory -->
+<!-- BUILD STAMP: v2026.06.29-equiplife -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -170,6 +170,8 @@
   .arow .al{flex:1;min-width:0;} .arow .an{font-weight:700;font-size:.88rem;color:var(--ink);}
   .arow .am{font-size:.74rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .arow .aage{font-size:.78rem;font-weight:800;color:var(--muted);flex:0 0 auto;} .arow .aage.old{color:var(--high);}
+  .fbadge{flex:0 0 auto;font-size:.66rem;font-weight:800;padding:3px 8px;border-radius:99px;text-transform:uppercase;letter-spacing:.03em;}
+  .fbadge.replace{background:#fdecec;color:var(--high);} .fbadge.watch{background:#fdf1e0;color:var(--med);}
   .backbtn{display:inline-flex;align-items:center;gap:5px;background:none;border:none;color:var(--navy);font-weight:800;font-size:.9rem;cursor:pointer;padding:4px 2px;margin-bottom:6px;}
   .ohead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px;}
   .ohead .nm{font-size:1.08rem;font-weight:800;}
@@ -261,7 +263,7 @@
 <script>
 const OFFICES_FALLBACK=['Alamo Ranch','Braun','Bulverde','Cibolo','Forum','Leon Springs','Mission Oaks','Potranco','Sahota','Singing Hills','Stone Oak','TPC'];
 let officeNames=OFFICES_FALLBACK.slice();
-let assets=[];
+let assets=[], life=[], lifeMap={};
 const CREW=['Adrian Ellenwood','Maintenance Tech 1','Maintenance Tech 2'];
 const STATUSES=['New','In progress','Pending','Part ordered','Fixed'];
 const FLOW=['New','In progress','Pending','Part ordered'];
@@ -316,6 +318,8 @@ else { openGate(); }
 async function load(){
   try{ const r=await fetch(API); const d=await r.json(); if(d.error) throw new Error(d.error);
     issues=d.issues||[]; log=d.worklog||[]; parts=d.parts||[]; assets=d.assets||[];
+    life=d.life||[]; lifeMap=Object.assign({},LIFE_DEFAULT);
+    life.forEach(r=>{ if(r&&r.category&&typeof r.years==='number'&&!isNaN(r.years)) lifeMap[r.category]=r.years; });
     // Rebuild "not a duplicate" decisions from the Work Log so they persist across reloads/redeploys.
     dismissed={};
     log.forEach(l=>{ const m=/\[dupe-key:([^\]]+)\]/.exec(l.note||''); if(m) dismissed[m[1]]=true; });
@@ -607,30 +611,65 @@ function partsDashboard(){
 function assetYear(a){ const m=String(a.date||'').match(/(19|20)\d\d/); return m?parseInt(m[0],10):null; }
 function assetAge(a){ const y=assetYear(a); if(!y) return null; const d=new Date().getFullYear()-y; return (d>=0&&d<80)?d:null; }
 
+// Adrian-editable expected service life. Defaults below; the "Equipment Life" Airtable table overrides any of these.
+const LIFE_DEFAULT={'Chair & unit':15,'Operatory light':12,'X-ray':15,'Pano / 3D':12,'Sterilizer / autoclave':10,'Vacuum pump':12,'Compressor':12,'Intraoral camera / sensor':7,'Scanner (iTero)':6,'Model trimmer':15,'Amalgam separator':10};
+function normCat(t){ const s=String(t||'').toLowerCase();
+  if(/scanner|itero/.test(s)) return 'Scanner (iTero)';
+  if(/intraoral|sensor|camera/.test(s)) return 'Intraoral camera / sensor';
+  if(/pano|ceph|cbct|3d/.test(s)) return 'Pano / 3D';
+  if(/x.?ray/.test(s)) return 'X-ray';
+  if(/autoclave|steriliz|statim|m-?11/.test(s)) return 'Sterilizer / autoclave';
+  if(/vac/.test(s)) return 'Vacuum pump';
+  if(/comp/.test(s)) return 'Compressor';
+  if(/trimmer/.test(s)) return 'Model trimmer';
+  if(/amalgam/.test(s)) return 'Amalgam separator';
+  if(/light/.test(s)) return 'Operatory light';
+  if(/chair|unit/.test(s)) return 'Chair & unit';
+  return (String(t||'').trim())||'Other';
+}
+function repairsFor(a){ const nl=normChair(a.location); if(!nl) return 0; return issues.filter(i=>i.office===a.office && normChair(i.chair)===nl).length; }
+function replaceFlag(a){ const age=assetAge(a); if(age==null) return {state:'',age:null,life:null,cat:normCat(a.asset),reps:0};
+  const cat=normCat(a.asset), life=lifeMap[cat], reps=repairsFor(a);
+  if(life==null) return {state:'',age:age,life:null,cat:cat,reps:reps};
+  var state='';
+  if(age>=life) state='replace';
+  else if(age>=life-2) state=(reps>=3?'replace':'watch');  // old + breaking a lot escalates
+  return {state:state,age:age,life:life,cat:cat,reps:reps}; }
+
 function assetsDashboard(){
   if(!assets.length) return '<div class="empty">No equipment loaded yet.</div>';
-  const offs={}, types={}; let oldest=null, oldestAge=-1;
+  const cats={}; let oldest=null, oldestAge=-1;
   const b={'0-5':0,'5-10':0,'10-15':0,'15+':0,'unknown':0};
-  assets.forEach(a=>{ if(a.office) offs[a.office]=(offs[a.office]||0)+1;
-    const t=((a.asset||'').trim())||'Other'; types[t]=(types[t]||0)+1;
+  assets.forEach(a=>{ const c=normCat(a.asset); cats[c]=(cats[c]||0)+1;
     const age=assetAge(a);
     if(age==null) b.unknown++;
     else { if(age<5)b['0-5']++; else if(age<10)b['5-10']++; else if(age<15)b['10-15']++; else b['15+']++;
       if(age>oldestAge){oldestAge=age; oldest=a;} }
   });
-  const nType=Object.keys(types).length;
+  // replace-soon flags (age vs Adrian's expected-life table, repairs escalate)
+  const flagged=assets.map(a=>({a,f:replaceFlag(a)})).filter(x=>x.f.state);
+  const byOver=(a,b)=>((b.f.age-b.f.life)-(a.f.age-a.f.life))||(b.f.reps-a.f.reps);
+  const reps=flagged.filter(x=>x.f.state==='replace').sort(byOver);
+  const wat=flagged.filter(x=>x.f.state==='watch').sort(byOver);
   let h='<div class="stats">'+
     '<div class="stat"><b>'+assets.length+'</b><span>Total items</span></div>'+
-    '<div class="stat"><b>'+nType+'</b><span>Types</span></div>'+
-    '<div class="stat'+(b['15+']?' dupe':'')+'"><b>'+b['15+']+'</b><span>Over 15 yrs</span></div></div>';
+    '<div class="stat'+(reps.length?' dupe':'')+'"><b>'+reps.length+'</b><span>Replace soon</span></div>'+
+    '<div class="stat"><b>'+wat.length+'</b><span>On watch</span></div></div>';
+  // Replace soon
+  h+='<div class="secthead">Replace soon · age vs expected life</div><div class="panel">';
+  if(!flagged.length){ h+='<div class="none">Nothing past its expected life yet. Targets live in the Equipment Life table in Airtable — change them there and this updates.</div>'; }
+  else { const rowF=(x,cls,lbl)=>{ const f=x.f,a=x.a; return '<div class="arow"><div class="al"><div class="an">'+esc(a.office)+' — '+esc(f.cat)+(a.location?' · '+esc(a.location):'')+'</div><div class="am">'+f.age+' yrs old · expected '+f.life+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div><span class="fbadge '+cls+'">'+lbl+'</span></div>'; };
+    reps.forEach(x=>h+=rowF(x,'replace','Replace')); wat.forEach(x=>h+=rowF(x,'watch','Watch')); }
+  h+='</div>';
+  // Age profile
   h+='<div class="secthead">Age profile</div><div class="panel">';
   const order=[['0-5','0–5 yrs','#1B9E4B'],['5-10','5–10 yrs','#7BB026'],['10-15','10–15 yrs','#E8930C'],['15+','15+ yrs','#E5484D'],['unknown','No date on file','#cdd5dc']];
-  const maxB=Math.max(order[0]&&1, ...order.map(o=>b[o[0]]),1);
+  const maxB=Math.max(...order.map(o=>b[o[0]]),1);
   order.forEach(o=>{ if(!b[o[0]]) return; const pct=Math.max(Math.round(b[o[0]]/maxB*100),6);
     h+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+o[1]+'</span><span class="ocount"><b>'+b[o[0]]+'</b></span></div><div class="obar"><i style="width:'+pct+'%;background:'+o[2]+'"></i></div></div></div>'; });
   h+='</div>';
-  if(oldest) h+='<div class="pnote">Oldest item on file: <b>'+esc(oldest.asset||'item')+'</b> at '+esc(oldest.office)+' — about '+oldestAge+' years old'+(oldest.model?' ('+esc(oldest.model)+')':'')+'.</div>';
-  // problem children: spots with the most repair requests
+  if(oldest) h+='<div class="pnote">Oldest item on file: <b>'+esc(normCat(oldest.asset))+'</b> at '+esc(oldest.office)+' — about '+oldestAge+' years old'+(oldest.model?' ('+esc(oldest.model)+')':'')+'.</div>';
+  // Problem children
   const spots={}; issues.forEach(i=>{ const nc=normChair(i.chair); if(!nc) return; const k=i.office+'|'+nc; (spots[k]=spots[k]||{office:i.office,chair:i.chair,n:0}); spots[k].n++; });
   const top=Object.keys(spots).map(k=>spots[k]).filter(s=>s.n>=2).sort((a,b)=>b.n-a.n).slice(0,8);
   h+='<div class="secthead">Problem children · most repair requests</div><div class="panel">';
@@ -638,8 +677,9 @@ function assetsDashboard(){
     h+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+esc(s.office)+' — '+esc(s.chair||'?')+'</span><span class="ocount"><b>'+s.n+'</b> reqs</span></div><div class="obar"><i style="width:'+pct+'%;background:var(--high)"></i></div></div></div>'; }); }
   else h+='<div class="none">Not enough repair history yet to flag repeat offenders.</div>';
   h+='</div>';
+  // By type (clean categories)
   h+='<div class="secthead">By type</div><div class="panel">';
-  Object.keys(types).map(t=>[t,types[t]]).sort((a,b)=>b[1]-a[1]).slice(0,12).forEach(p=>{ h+='<div class="kv"><span>'+esc(p[0])+'</span><b>'+p[1]+'</b></div>'; });
+  Object.keys(cats).map(t=>[t,cats[t]]).sort((a,b)=>b[1]-a[1]).forEach(p=>{ h+='<div class="kv"><span>'+esc(p[0])+'</span><b>'+p[1]+'</b></div>'; });
   h+='</div>';
   return h;
 }
@@ -654,9 +694,10 @@ function assetBrowser(){
   const byOff={}; list.forEach(a=>{ const o=a.office||'(no office)'; (byOff[o]=byOff[o]||[]).push(a); });
   Object.keys(byOff).sort().forEach(o=>{ const items=byOff[o]; const key='asset:'+o; const isOpen=!!openSecs[key]||!!q;
     h+='<div class="sec'+(isOpen?'':' col')+'"><div class="sechead" data-sec="'+esc(key)+'"><span class="cw s-rank"></span><span class="snm">'+esc(o)+'</span><span class="sct">'+items.length+'</span><span class="cv">▾</span></div><div class="cards">';
-    items.slice().sort((a,b)=>(a.location||'').localeCompare(b.location||'')).forEach(a=>{ const age=assetAge(a);
+    items.slice().sort((a,b)=>(a.location||'').localeCompare(b.location||'')).forEach(a=>{ const age=assetAge(a); const fl=replaceFlag(a);
       const meta=[a.model,a.serial?'SN '+a.serial:'',a.number?'#'+a.number:''].filter(Boolean).map(esc).join(' · ');
-      h+='<div class="arow"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'</div>';
+      const badge=fl.state?'<span class="fbadge '+fl.state+'">'+(fl.state==='replace'?'Replace':'Watch')+'</span>':'';
+      h+='<div class="arow"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+badge+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'</div>';
     });
     h+='</div></div>';
   });
