@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.06.29-equiphealth2 -->
+<!-- BUILD STAMP: v2026.06.29-outofservice -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -172,8 +172,13 @@
   .arow .al{flex:1;min-width:0;} .arow .an{font-weight:700;font-size:.88rem;color:var(--ink);}
   .arow .am{font-size:.74rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .arow .aage{font-size:.78rem;font-weight:800;color:var(--muted);flex:0 0 auto;} .arow .aage.old{color:var(--high);}
+  .arow.tapr{cursor:pointer;} .arow.tapr:active{background:#f0f5f8;}
+  .rchev{flex:0 0 auto;color:var(--muted);font-weight:800;font-size:1.05rem;margin-left:4px;}
+  .lmut{font-weight:600;color:var(--muted);font-size:.78rem;}
   .fbadge{flex:0 0 auto;font-size:.66rem;font-weight:800;padding:3px 8px;border-radius:99px;text-transform:uppercase;letter-spacing:.03em;}
   .fbadge.replace{background:#fdecec;color:var(--high);} .fbadge.watch{background:#fdf1e0;color:var(--med);}
+  .fbadge.oos{background:#eef2f5;color:var(--muted);}
+  .stats-eq{flex-wrap:wrap;} .stats-eq .stat{flex:1 1 calc(50% - 5px);}
   .stat.tap{cursor:pointer;transition:border-color .12s,transform .06s;} .stat.tap:hover{border-color:#bcd0e2;} .stat.tap:active{transform:scale(.98);}
   .cdown{flex:0 0 auto;font-size:.72rem;font-weight:800;padding:4px 10px;border-radius:99px;white-space:nowrap;}
   .cdown.green{background:#e7f6ec;color:var(--green);} .cdown.red{background:#fdecec;color:var(--high);}
@@ -669,6 +674,7 @@ function cdownChip(f){ if(f.left==null) return '';
   if(f.left>0) return '<span class="cdown green">'+f.left+' yr'+(f.left>1?'s':'')+' left</span>';
   if(f.left===0) return '<span class="cdown red">due now</span>';
   return '<span class="cdown red">'+(-f.left)+' yr'+((-f.left)>1?'s':'')+' over</span>'; }
+function isOOS(a){ return String(a.status||'').toLowerCase()==='out of service'; }
 
 function verdictFor(avgAge){ if(avgAge==null) return ['—','v-mid'];
   if(avgAge<6) return ['Young fleet','v-young'];
@@ -679,12 +685,13 @@ function spectrumHtml(b,total){ const segs=[['0-5','#1B9E4B'],['5-10','#7BB026']
   let s=''; if(!total) return s; segs.forEach(x=>{ if(!b[x[0]]) return; const pct=(b[x[0]]/total*100).toFixed(1); s+='<span style="width:'+pct+'%;background:'+x[1]+'" title="'+x[0]+': '+b[x[0]]+'"></span>'; }); return s; }
 function legendHtml(b){ return '<div class="speclegend"><span><i style="background:#1B9E4B"></i>0–5</span><span><i style="background:#7BB026"></i>5–10</span><span><i style="background:#E8930C"></i>10–15</span><span><i style="background:#E5484D"></i>15+</span>'+(b.unknown?'<span><i style="background:#cdd5dc"></i>no date</span>':'')+'</div>'; }
 function fleetMetrics(list){ let ageSum=0, ageN=0, rep=0, wat=0;
+  const act=list.filter(a=>!isOOS(a));
   const b={'0-5':0,'5-10':0,'10-15':0,'15+':0,'unknown':0};
-  list.forEach(a=>{ const age=assetAge(a);
+  act.forEach(a=>{ const age=assetAge(a);
     if(age==null) b.unknown++;
     else { if(age<5)b['0-5']++; else if(age<10)b['5-10']++; else if(age<15)b['10-15']++; else b['15+']++; ageSum+=age; ageN++; }
     const f=replaceFlag(a); if(f.state==='replace')rep++; else if(f.state==='watch')wat++; });
-  return {b, ageN, avgAge:(ageN?ageSum/ageN:null), rep, wat, total:list.length}; }
+  return {b, ageN, avgAge:(ageN?ageSum/ageN:null), rep, wat, total:act.length}; }
 function healthCard(list,label){ const m=fleetMetrics(list); const v=verdictFor(m.avgAge);
   return '<div class="fhcard ohcard">'+
     '<div class="fhtop"><span class="fhlabel">'+esc(label||'Health')+'</span><span class="fhverdict '+v[1]+'">'+v[0]+'</span></div>'+
@@ -697,18 +704,19 @@ function healthCard(list,label){ const m=fleetMetrics(list); const v=verdictFor(
 
 function assetsDashboard(){
   if(!assets.length) return '<div class="empty">No equipment loaded yet.</div>';
+  const active=assets.filter(a=>!isOOS(a)), oos=assets.filter(isOOS);
   const cats={}; let oldest=null, oldestAge=-1;
   let ageSum=0, ageN=0; const offAge={};
   const b={'0-5':0,'5-10':0,'10-15':0,'15+':0,'unknown':0};
-  assets.forEach(a=>{ const c=normCat(a.asset); cats[c]=(cats[c]||0)+1;
+  active.forEach(a=>{ const c=normCat(a.asset); cats[c]=(cats[c]||0)+1;
     const age=assetAge(a);
     if(age==null) b.unknown++;
     else { if(age<5)b['0-5']++; else if(age<10)b['5-10']++; else if(age<15)b['10-15']++; else b['15+']++;
       ageSum+=age; ageN++; const o=a.office||'(no office)'; (offAge[o]=offAge[o]||{s:0,n:0}); offAge[o].s+=age; offAge[o].n++;
       if(age>oldestAge){oldestAge=age; oldest=a;} }
   });
-  // replace-soon flags grouped by category
-  const flagged=assets.map(a=>({a,f:replaceFlag(a)})).filter(x=>x.f.state);
+  // replace-soon flags grouped by category (active equipment only)
+  const flagged=active.map(a=>({a,f:replaceFlag(a)})).filter(x=>x.f.state);
   const repCount=flagged.filter(x=>x.f.state==='replace').length;
   const watCount=flagged.filter(x=>x.f.state==='watch').length;
   const byCat={};
@@ -726,13 +734,14 @@ function assetsDashboard(){
     '<div class="fhtop"><span class="fhlabel">Fleet health</span><span class="fhverdict '+fv[1]+'">'+fv[0]+'</span></div>'+
     '<div class="fhmain"><span class="fhbig">'+(avgAge!=null?avgAge.toFixed(1):'—')+'<i> yrs avg</i></span>'+
       '<span class="fhmini"><b>'+attPct+'%</b> past or nearing end of life</span></div>'+
-    '<div class="spectrum">'+spectrumHtml(b,assets.length)+'</div>'+legendHtml(b)+
-    '<div class="fhnote">'+assets.length+' items'+(b.unknown?' · '+b.unknown+' with no date':'')+(oldOff?' · oldest office: <b>'+esc(oldOff)+'</b> (~'+oldOffAvg.toFixed(0)+' yrs avg)':'')+'</div>'+
+    '<div class="spectrum">'+spectrumHtml(b,active.length||1)+'</div>'+legendHtml(b)+
+    '<div class="fhnote">'+active.length+' in service'+(oos.length?' · <b>'+oos.length+'</b> out of service':'')+(b.unknown?' · '+b.unknown+' with no date':'')+(oldOff?' · oldest office: <b>'+esc(oldOff)+'</b> (~'+oldOffAvg.toFixed(0)+' yrs avg)':'')+'</div>'+
     '</div>';
-  let h=hero+'<div class="stats">'+
+  let h=hero+'<div class="stats stats-eq">'+
     '<div class="stat tap" data-drill="all"><b>'+assets.length+'</b><span>Total items ›</span></div>'+
     '<div class="stat tap'+(repCount?' dupe':'')+'" data-drill="replace"><b>'+repCount+'</b><span>Replace now ›</span></div>'+
-    '<div class="stat tap" data-drill="watch"><b>'+watCount+'</b><span>Coming due ›</span></div></div>';
+    '<div class="stat tap" data-drill="watch"><b>'+watCount+'</b><span>Coming due ›</span></div>'+
+    '<div class="stat tap" data-drill="oos"><b>'+oos.length+'</b><span>Out of service ›</span></div></div>';
   // ---- Replace soon: parent window → category windows → items ----
   let catHtml='';
   if(!catKeys.length){ catHtml='<div class="none">Nothing past its expected life yet. Targets live in the Equipment Life table in Airtable — change them there and this updates.</div>'; }
@@ -745,9 +754,9 @@ function assetsDashboard(){
         (g.watch.length?'<span class="cchip watch">'+g.watch.length+' watch</span>':'')+
         '<span class="cv">▾</span></div><div class="cards">';
       rows.forEach(x=>{ const f=x.f,a=x.a;
-        catHtml+='<div class="arow"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div>'+
+        catHtml+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div>'+
           '<div class="am">'+f.age+' yrs old · lasts ~'+f.life+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div>'+
-          cdownChip(f)+'</div>'; });
+          cdownChip(f)+'<span class="rchev">›</span></div>'; });
       catHtml+='</div></div>';
     });
   const rsChips=(repCount?'<span class="cchip replace">'+repCount+' replace</span>':'')+(watCount?'<span class="cchip watch">'+watCount+' watch</span>':'');
@@ -790,18 +799,30 @@ function assetDrillView(){
       h+='<div class="sec'+(isOpen?'':' col')+'"><div class="sechead" data-sec="'+esc(key)+'"><span class="cw s-rank"></span><span class="snm">'+esc(c)+'</span><span class="sct">'+items.length+'</span><span class="cv">▾</span></div><div class="cards">';
       items.slice().sort((p,q)=>(p.office||'').localeCompare(q.office||'')||(p.location||'').localeCompare(q.location||'')).forEach(a=>{ const age=assetAge(a); const fl=replaceFlag(a);
         const meta=[a.model,a.serial?'SN '+a.serial:'',a.number?'#'+a.number:''].filter(Boolean).map(esc).join(' · ');
-        h+='<div class="arow"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(fl.state?cdownChip(fl):'')+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'</div>'; });
+        h+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(isOOS(a)?'<span class="fbadge oos">Out</span>':(fl.state?cdownChip(fl):''))+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'<span class="rchev">›</span></div>'; });
       h+='</div></div>';
     });
     return h;
   }
-  const flagged=assets.map(a=>({a,f:replaceFlag(a)})).filter(x=>x.f.state===assetDrill);
+  if(assetDrill==='oos'){
+    const list=assets.filter(isOOS).slice().sort((p,q)=>(p.office||'').localeCompare(q.office||'')||(p.location||'').localeCompare(q.location||''));
+    h+='<div class="secthead">Out of service · '+list.length+' item'+(list.length===1?'':'s')+'</div>';
+    h+='<div class="hint">These are off the floor and left out of the health numbers. Tap one to return it to service or edit it.</div><div class="panel">';
+    if(!list.length) h+='<div class="none">Nothing is out of service right now.</div>';
+    else list.forEach(a=>{ const age=assetAge(a);
+      h+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(normCat(a.asset))+' · '+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div>'+
+        '<div class="am">'+[a.model,a.serial?'SN '+a.serial:'',a.number?'#'+a.number:''].filter(Boolean).map(esc).join(' · ')+'</div></div>'+
+        '<span class="fbadge oos">Out</span>'+(age!=null?'<div class="aage">'+age+'y</div>':'')+'<span class="rchev">›</span></div>'; });
+    h+='</div>';
+    return h;
+  }
+  const flagged=assets.filter(a=>!isOOS(a)).map(a=>({a,f:replaceFlag(a)})).filter(x=>x.f.state===assetDrill);
   flagged.sort((p,q)=>(p.f.left-q.f.left)||(q.f.reps-p.f.reps));
   const title=(assetDrill==='replace'?'Replace now':'Coming due')+' · '+flagged.length+' item'+(flagged.length===1?'':'s');
   h+='<div class="secthead">'+title+'</div><div class="panel">';
   if(!flagged.length) h+='<div class="none">Nothing here right now.</div>';
   else flagged.forEach(x=>{ const f=x.f,a=x.a;
-    h+='<div class="arow"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div><div class="am">'+esc(f.cat)+' · '+f.age+' yrs old · lasts ~'+f.life+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div>'+cdownChip(f)+'</div>'; });
+    h+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(a.office)+(a.location?' · '+esc(a.location):'')+'</div><div class="am">'+esc(f.cat)+' · '+f.age+' yrs old · lasts ~'+f.life+(f.reps?' · '+f.reps+' repair'+(f.reps>1?'s':''):'')+'</div></div>'+cdownChip(f)+'<span class="rchev">›</span></div>'; });
   h+='</div>';
   return h;
 }
@@ -818,7 +839,7 @@ function assetBrowserInner(){
     h+=healthCard(items,o+' health');
     items.slice().sort((a,b)=>(a.location||'').localeCompare(b.location||'')).forEach(a=>{ const age=assetAge(a); const fl=replaceFlag(a);
       const meta=[a.model,a.serial?'SN '+a.serial:'',a.number?'#'+a.number:''].filter(Boolean).map(esc).join(' · ');
-      h+='<div class="arow"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(fl.state?cdownChip(fl):'')+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'</div>';
+      h+='<div class="arow tapr" data-aid="'+esc(a.id)+'"><div class="al"><div class="an">'+esc(a.asset||a.model||'Item')+(a.location?' · '+esc(a.location):'')+'</div>'+(meta?'<div class="am">'+meta+'</div>':'')+'</div>'+(isOOS(a)?'<span class="fbadge oos">Out</span>':(fl.state?cdownChip(fl):''))+(age!=null?'<div class="aage'+(age>=15?' old':'')+'">'+age+'y</div>':'')+'<span class="rchev">›</span></div>';
     });
     h+='</div></div>';
   });
@@ -1080,6 +1101,64 @@ async function doAddEquip(){
   }catch(e){ btn.disabled=false; btn.textContent='Add equipment'; err.textContent=String(e.message||'Could not add'); }
 }
 
+function openAsset(id){
+  const a=assets.find(x=>x.id===id); if(!a) return;
+  let osel='<select id="ea-office"><option value="">— choose office —</option>';
+  officeNames.forEach(n=>{ osel+='<option'+(n===a.office?' selected':'')+'>'+esc(n)+'</option>'; });
+  osel+='<option value="__new">+ New office…</option></select>';
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 4px">Edit equipment</h2>'+
+    '<div class="hint">Fix anything that\u2019s wrong, then Save. Changes write straight to Airtable.</div>'+
+    '<label>Office</label>'+osel+
+    '<div id="ea-newoffice-wrap" style="display:none"><label>New office name</label><input id="ea-newoffice" placeholder="e.g. Helotes"></div>'+
+    '<label>Room / location</label><input id="ea-loc" value="'+esc(a.location||'')+'">'+
+    '<label>Type</label><input id="ea-type" value="'+esc(a.asset||'')+'">'+
+    '<label>Make / model</label><input id="ea-model" value="'+esc(a.model||'')+'">'+
+    '<label>Serial number</label><input id="ea-serial" value="'+esc(a.serial||'')+'">'+
+    '<label>Asset number</label><input id="ea-num" value="'+esc(a.number||'')+'">'+
+    '<label>Manufacture date <span class="lmut">(year is enough, e.g. 2018)</span></label><input id="ea-date" value="'+esc(a.date||'')+'">'+
+    '<div id="ea-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="ea-save">Save changes</button>'+
+    (isOOS(a)
+      ? '<button class="ghost-btn" id="ea-oos" style="color:var(--green);border-color:var(--green)">↩ Return to service</button>'
+      : '<button class="ghost-btn" id="ea-oos" style="color:var(--high);border-color:#f1b2b4">⊘ Mark out of service</button>')+
+    '<button class="ghost-btn" id="ea-cancel">Cancel</button>';
+  const so=document.getElementById('ea-office');
+  if(so) so.onchange=()=>{ document.getElementById('ea-newoffice-wrap').style.display = so.value==='__new'?'block':'none'; };
+  document.getElementById('ea-save').onclick=()=>doSaveAsset(id);
+  document.getElementById('ea-oos').onclick=()=>doSetAssetStatus(id, isOOS(a)?'In service':'Out of service');
+  document.getElementById('ea-cancel').onclick=hide;
+  show();
+}
+async function doSaveAsset(id){
+  const err=document.getElementById('ea-err');
+  let office=document.getElementById('ea-office').value;
+  if(office==='__new'){ office=(document.getElementById('ea-newoffice').value||'').trim(); }
+  const payload={ action:'editasset', id:id, office:office,
+    location:(document.getElementById('ea-loc').value||'').trim(),
+    asset:(document.getElementById('ea-type').value||'').trim(),
+    model:(document.getElementById('ea-model').value||'').trim(),
+    serial:(document.getElementById('ea-serial').value||'').trim(),
+    number:(document.getElementById('ea-num').value||'').trim(),
+    date:(document.getElementById('ea-date').value||'').trim() };
+  if(!payload.asset){ err.textContent='Type can\u2019t be empty.'; return; }
+  const btn=document.getElementById('ea-save'); btn.disabled=true; btn.textContent='Saving…';
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not save');
+    const a=assets.find(x=>x.id===id);
+    if(a){ a.office=office; a.location=payload.location; a.asset=payload.asset; a.model=payload.model; a.serial=payload.serial; a.number=payload.number; a.date=payload.date; }
+    if(office && !officeNames.some(o=>o.toLowerCase()===office.toLowerCase())){ officeNames.push(office); officeNames.sort(); }
+    toast('Saved'); hide(); render();
+  }catch(e){ btn.disabled=false; btn.textContent='Save changes'; err.textContent=String(e.message||'Could not save'); }
+}
+
+async function doSetAssetStatus(id,status){
+  const btn=document.getElementById('ea-oos'); if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'editasset',id:id,status:status})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not update');
+    const a=assets.find(x=>x.id===id); if(a) a.status=status;
+    toast(status==='Out of service'?'Marked out of service':'Back in service'); hide(); render();
+  }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Try again'; } const err=document.getElementById('ea-err'); if(err) err.textContent=String(e.message||'Could not update'); }
+}
 function viewOffices(){
   const open=issues.filter(isOpen);
   if(!selOffice){
@@ -1114,6 +1193,7 @@ function wire(){
   $('#wrap').querySelectorAll('[data-wh]').forEach(c=>c.onclick=()=>{ whMode=c.dataset.wh; render(); });
   $('#wrap').querySelectorAll('[data-inv]').forEach(c=>c.onclick=()=>{ invMode=c.dataset.inv; assetDrill=''; render(); });
   $('#wrap').querySelectorAll('[data-drill]').forEach(c=>c.onclick=()=>{ assetDrill=c.dataset.drill; window.scrollTo(0,0); render(); });
+  $('#wrap').querySelectorAll('[data-aid]').forEach(c=>c.onclick=()=>openAsset(c.dataset.aid));
   const assrch=document.getElementById('as-search');
   if(assrch){ assrch.oninput=()=>{ const pos=assrch.selectionStart; assetSearch=assrch.value; render();
     const n=document.getElementById('as-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }
