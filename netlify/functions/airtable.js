@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.06.29-inventory
+// BUILD: v2026.06.29-equiplife
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -36,6 +36,9 @@ exports.handler = async function (event) {
       const parts  = await fetchAll(PARTS, headers, '');
       const offices= await fetchAll(OFFICES, headers, '');
       const assets = await fetchAll(ASSETS, headers, '');
+      // Equipment Life = small Adrian-editable table (Category, Years). Optional — falls back to [] if absent.
+      var life = [];
+      try { life = (await fetchAll('Equipment%20Life', headers, '')).map(mapLife); } catch(e){ life = []; }
       // Live office list = union of Offices table + any office found on assets or problems
       var offSet = {};
       offices.forEach(function(o){ var n=String((o.fields[OF.office]||'')).trim(); if(n) offSet[n]=true; });
@@ -43,12 +46,13 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.06.29-inventory',
+        build: 'v2026.06.29-equiplife',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
         offices: offices.map(mapOffice),
         assets: assets.map(mapAsset),
+        life: life,
         officeList: officeList
       });
     }
@@ -97,6 +101,8 @@ function mapIssue(r){ var f=r.fields; return {
   id:r.id, office:f[P.office]||'', chair:f[P.chair]||'', problem:f[P.problem]||'',
   impact:(f[P.urgency]||'').toLowerCase(), reporter:f[P.reporter]||'', status:f[P.status]||'New',
   date:f[P.reported]||'', fixed:f[P.fixed]||'', history:f[P.history]||'' }; }
+function mapLife(r){ var f=r.fields; var y=f['Years'];
+  return { category:String(f['Category']||'').trim(), years:(y==null||y===''?null:Number(y)) }; }
 function mapLog(r){ var f=r.fields; var ph=f[W.photo]; return {
   id:r.id, issueId:f[W.problemId]||'', date:f[W.date]||'', who:f[W.who]||'', note:f[W.note]||'',
   partNumber:f[W.partNumber]||'', qty:f[W.qty]||'',
