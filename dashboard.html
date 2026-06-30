@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.06.30-reports -->
+<!-- BUILD STAMP: v2026.06.30-partsbrand -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -256,6 +256,8 @@
   .ckrow{display:flex;align-items:flex-start;gap:10px;padding:9px 2px;font-weight:600;cursor:pointer;}
   .ckrow input{margin-top:3px;width:18px;height:18px;flex:0 0 auto;} .ckrow i{font-weight:500;color:var(--muted);font-size:.8rem;}
   .lvllbl{font-size:.68rem;color:var(--muted);font-weight:600;margin-top:3px;text-align:center;}
+  .idle{flex:0 0 auto;align-self:center;font-size:.7rem;font-weight:700;color:var(--muted);background:#eef2f5;border-radius:999px;padding:3px 9px;white-space:nowrap;}
+  .idle.bad{color:#9a3b3e;background:#fdecec;}
   #gate{position:fixed;inset:0;z-index:100;background:linear-gradient(180deg,#7FD6F8,#57C2EF);display:flex;align-items:center;justify-content:center;padding:24px;}
   #gate.hide{display:none;}
   .gatecard{background:#fff;border-radius:18px;box-shadow:0 12px 40px rgba(20,32,43,.25);padding:26px 22px;max-width:340px;width:100%;text-align:center;}
@@ -625,6 +627,7 @@ function reportCSV(office,from,to,wantDone,wantOpen){
 }
 function reportPrintHTML(office,from,to,wantDone,wantOpen){
   const r=reportData(office,from,to,wantDone,wantOpen);
+  const logoEl=document.querySelector('header .logo img'); const logo=logoEl?logoEl.src:'';
   const scope=(office&&office!=='All')?office:'All offices';
   const range=(from||to)?((from||'…')+' to '+(to||'…')):'All dates';
   let ds=[]; r.completed.forEach(i=>{ const d=daysBetween(i.date,i.fixed); if(d!=null&&d>=0) ds.push(d); });
@@ -632,7 +635,7 @@ function reportPrintHTML(office,from,to,wantDone,wantOpen){
   const byOff=list=>{ const m={}; list.forEach(i=>{ (m[i.office||'(no office)']=m[i.office||'(no office)']||[]).push(i); }); return m; };
   const esc2=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   let body='';
-  body+='<div class="rh"><div><h1>7to7 Maintenance — Work Report</h1><div class="sub">'+esc2(scope)+' · '+esc2(range)+'</div></div><div class="gen">Generated '+new Date().toLocaleDateString()+'</div></div>';
+  body+='<div class="rh">'+(logo?'<div class="rlogo"><img src="'+logo+'" alt="7to7"></div>':'')+'<div class="rtitle"><h1>Maintenance Work Report</h1><div class="sub">'+esc2(scope)+' · '+esc2(range)+'</div></div><div class="gen">Generated<br>'+new Date().toLocaleDateString()+'</div></div>';
   body+='<div class="cards">';
   if(wantDone) body+='<div class="kpi"><b>'+r.completed.length+'</b><span>Completed</span></div><div class="kpi"><b>'+avg+'</b><span>Avg days to fix</span></div>';
   if(wantOpen) body+='<div class="kpi"><b>'+r.open.length+'</b><span>Still open</span></div>';
@@ -647,15 +650,17 @@ function reportPrintHTML(office,from,to,wantDone,wantOpen){
     return s; };
   if(wantDone) body+=sect('Completed work',r.completed,true);
   if(wantOpen) body+=sect('Still open',r.open,false);
-  const css='*{box-sizing:border-box}body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#14202b;margin:0;padding:28px;}'
-   +'h1{font-size:20px;margin:0;}.sub{color:#1E60A8;font-weight:700;margin-top:3px;}.gen{color:#6b7a89;font-size:12px;}'
-   +'.rh{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0E7C86;padding-bottom:12px;margin-bottom:16px;}'
+  const css='*{box-sizing:border-box}body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#14202b;margin:0;padding:28px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
+   +'h1{font-size:20px;margin:0;}.sub{font-weight:700;margin-top:3px;}.gen{font-size:11px;}'
+   +'.rh{display:flex;align-items:center;gap:14px;background:#66CCF6;border-radius:12px;padding:15px 18px;margin-bottom:18px;}'
+   +'.rlogo{background:#fff;border-radius:10px;padding:7px 11px;flex:0 0 auto;box-shadow:0 1px 4px rgba(20,32,43,.18);}.rlogo img{height:34px;display:block;}'
+   +'.rtitle{flex:1;}.rh h1{color:#0b3a6b;}.rh .sub{color:#0b3a6b;opacity:.9;}.gen{color:#0b3a6b;font-weight:600;text-align:right;opacity:.85;line-height:1.3;}'
    +'.cards{display:flex;gap:12px;margin-bottom:8px;}.kpi{flex:1;border:1px solid #d9e1e7;border-radius:10px;padding:12px;text-align:center;}'
    +'.kpi b{display:block;font-size:26px;}.kpi span{font-size:11px;color:#6b7a89;text-transform:uppercase;letter-spacing:.04em;}'
-   +'h2{font-size:15px;margin:22px 0 6px;border-bottom:1px solid #d9e1e7;padding-bottom:4px;}h3{font-size:13px;margin:14px 0 5px;color:#1E60A8;}h3 .n{color:#6b7a89;font-weight:600;}'
+   +'h2{font-size:15px;margin:22px 0 6px;border-bottom:2px solid #66CCF6;padding-bottom:4px;}h3{font-size:13px;margin:14px 0 5px;color:#1E60A8;}h3 .n{color:#6b7a89;font-weight:600;}'
    +'table{width:100%;border-collapse:collapse;font-size:12px;}th{text-align:left;color:#6b7a89;font-size:10px;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #d9e1e7;padding:5px 6px;}'
    +'td{border-bottom:1px solid #eef2f5;padding:6px;vertical-align:top;}td i{color:#6b7a89;}.empty{color:#6b7a89;font-size:12px;}'
-   +'.noprint{margin-bottom:14px;}button{background:#0E7C86;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;}'
+   +'.noprint{margin-bottom:14px;}button{background:#1E60A8;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;}'
    +'@media print{.noprint{display:none;}body{padding:0;}}';
   return '<!doctype html><html><head><meta charset="utf-8"><title>7to7 Work Report</title><style>'+css+'</style></head><body>'
     +'<div class="noprint"><button onclick="window.print()">Print / Save as PDF</button></div>'+body+'</body></html>';
@@ -712,7 +717,23 @@ function viewInventory(){
   return h+partsDashboard()+viewWarehouse();
 }
 
-function partsUsage(){ const used={}; log.forEach(l=>{ const n=(l.partNumber||'').trim(); const q=parseFloat(l.qty)||0; if(n&&q>0) used[n]=(used[n]||0)+q; }); return used; }
+function partsUsage(){ const u={}; const now=today0();
+  log.forEach(l=>{ const n=(l.partNumber||'').trim(); const q=parseFloat(l.qty)||0; if(!n||q<=0) return;
+    const o=u[n]||(u[n]={month:0,year:0,all:0,last:''}); o.all+=q;
+    if(l.date){ if(!o.last||l.date>o.last) o.last=l.date;
+      const d=dObj(l.date); if(d){ const days=Math.round((now-d)/MS); if(days<=30)o.month+=q; if(days<=365)o.year+=q; } } });
+  return u; }
+// latest sign of life for a part: most recent of last-used, last-ordered, order-date
+function lastActivity(p,usage){ const c=[]; const u=usage[p.number];
+  if(u&&u.last) c.push(String(u.last).slice(0,10));
+  if(p.lastOrdered) c.push(String(p.lastOrdered).slice(0,10));
+  if(p.orderDate) c.push(String(p.orderDate).slice(0,10));
+  c.sort(); return c.length?c[c.length-1]:''; }
+function idleLabel(s){ if(!s) return 'never used or ordered';
+  const days=daysAgo(s); if(days==null) return '';
+  if(days<=30) return 'active this month';
+  const mo=Math.round(days/30); if(mo<12) return 'idle '+mo+' months';
+  const yr=days/365; return 'idle '+(yr<10?yr.toFixed(1):Math.round(yr))+(yr<2?' year':' years'); }
 
 function partsDashboard(){
   const toOrder=parts.filter(p=>p.orderNow && !(p.onOrder>0));
@@ -721,24 +742,39 @@ function partsDashboard(){
   parts.forEach(p=>{ const c=parseFloat(p.cost), s=parseFloat(p.inStock);
     if(!isNaN(c)&&c>0){ haveCost++; if(!isNaN(s)) val+=c*s; } });
   const valStr = haveCost? ('$'+Math.round(val).toLocaleString()) : '—';
-  const used=partsUsage(); const anyUsage=Object.keys(used).length>0;
-  const movers=parts.map(p=>({p,n:used[p.number]||0})).filter(x=>x.n>0).sort((a,b)=>b.n-a.n).slice(0,6);
-  const dead=parts.filter(p=>!(used[p.number]>0) && parseFloat(p.inStock)>0).slice(0,8);
+  const usage=partsUsage();
+  const anyUsage=Object.keys(usage).length>0;
+  const haveDated=Object.keys(usage).some(k=>usage[k].year>0||usage[k].month>0);
+  const rows=parts.map(p=>({p,u:usage[p.number]||{month:0,year:0,all:0,last:''}}));
+  let movers = haveDated
+    ? rows.filter(x=>x.u.year>0).sort((a,b)=>b.u.year-a.u.year||b.u.month-a.u.month).slice(0,6)
+    : rows.filter(x=>x.u.all>0).sort((a,b)=>b.u.all-a.u.all).slice(0,6);
+  // sitting unused = on the shelf, but no use in the last 12 months; oldest / never first
+  const dead = rows.filter(x=>parseFloat(x.p.inStock)>0 && !(x.u.year>0))
+    .map(x=>({p:x.p,last:lastActivity(x.p,usage)}))
+    .sort((a,b)=>{ if(!a.last&&!b.last) return 0; if(!a.last) return -1; if(!b.last) return 1; return a.last.localeCompare(b.last); });
   let h='<div class="stats">'+
     '<div class="stat"><b>'+toOrder.length+'</b><span>To order</span></div>'+
     '<div class="stat"><b style="font-size:1.15rem">'+valStr+'</b><span>On the shelf</span></div>'+
     '<div class="stat"><b>'+onOrder.length+'</b><span>On order</span></div></div>';
   if(haveCost<parts.length){ h+='<div class="pnote">Add a <b>Unit cost</b> to parts in Airtable to see shelf value — '+haveCost+' of '+parts.length+' have one so far.</div>'; }
-  h+='<div class="secthead">Fast movers · most used</div><div class="panel">';
-  if(anyUsage && movers.length){ const mx=movers[0].n; movers.forEach(m=>{ const pct=Math.max(Math.round(m.n/mx*100),8);
-    h+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+esc(m.p.name)+'</span><span class="ocount"><b>'+m.n+'</b> used</span></div><div class="obar"><i style="width:'+pct+'%"></i></div></div></div>'; }); }
+  h+='<div class="secthead">Fast movers'+(haveDated?' · last 12 months':' · most used')+'</div><div class="panel">';
+  if(movers.length){ const mx=haveDated?(movers[0].u.year||1):(movers[0].u.all||1);
+    movers.forEach(m=>{ const metric=haveDated?m.u.year:m.u.all; const pct=Math.max(Math.round(metric/mx*100),8);
+      const label=haveDated ? ('<b>'+m.u.year+'</b> this year'+(m.u.month?' · <b>'+m.u.month+'</b> this month':'')) : ('<b>'+m.u.all+'</b> used');
+      h+='<div class="orow"><div class="obar-wrap"><div class="obar-top"><span class="oname">'+esc(m.p.name)+'</span><span class="ocount">'+label+'</span></div><div class="obar"><i style="width:'+pct+'%"></i></div></div></div>'; }); }
   else h+='<div class="none">Builds as the crew logs parts used in the app.</div>';
   h+='</div>';
-  h+='<div class="secthead">Sitting unused</div><div class="panel">';
-  if(anyUsage){ if(dead.length){ dead.forEach(p=>{ h+='<div class="prow2"><div class="pl"><div class="pn">'+esc(p.name)+'</div><div class="pm">#'+esc(p.number)+' · '+esc(p.inStock)+' on hand'+(p.bin?' · bin '+esc(p.bin):'')+'</div></div></div>'; }); }
-    else h+='<div class="none">Nothing flagged — every stocked part has moved.</div>'; }
-  else h+='<div class="none">Once parts get used in the app, the ones that never move show here.</div>';
-  h+='</div>';
+  // Sitting unused — collapsible, with an idle scale per part
+  let inner='';
+  if(!anyUsage) inner='<div class="none">Once parts get used in the app, the ones that never move show here.</div>';
+  else if(!dead.length) inner='<div class="none">Nothing flagged — every stocked part has moved in the last year.</div>';
+  else dead.slice(0,20).forEach(d=>{ const lab=idleLabel(d.last); const old=(!d.last)|| (daysAgo(d.last)!=null && daysAgo(d.last)>365);
+    inner+='<div class="prow2"><div class="pl"><div class="pn">'+esc(d.p.name)+'</div>'+
+      '<div class="pm">#'+esc(d.p.number)+' · '+esc(d.p.inStock)+' on hand'+(d.last?' · last activity '+fmt(d.last):'')+'</div></div>'+
+      '<span class="idle'+(old?' bad':'')+'">'+esc(lab)+'</span></div>'; });
+  const moreNote = dead.length>20 ? '<div class="pnote">Showing the 20 longest-idle. '+(dead.length-20)+' more.</div>' : '';
+  h+=nestSec('__sitting','Sitting unused','<span class="sct">'+(anyUsage?dead.length:0)+'</span>', inner+moreNote);
   return h;
 }
 
