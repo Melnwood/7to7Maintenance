@@ -177,6 +177,11 @@
   .statusgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin:6px 0 4px;}
   .statusgrid button{border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:11px 6px;font-weight:700;font-size:.84rem;cursor:pointer;}
   .statusgrid button.sel{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .urgencygrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin:6px 0 4px;}
+  .urgencygrid button{border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:11px 6px;font-weight:700;font-size:.84rem;cursor:pointer;}
+  .urgencygrid button.high.sel{background:var(--high);color:#fff;border-color:var(--high);}
+  .urgencygrid button.medium.sel{background:var(--med);color:#fff;border-color:var(--med);}
+  .urgencygrid button.low.sel{background:var(--low);color:#fff;border-color:var(--low);}
   label{display:block;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:14px 0 5px;}
   input,textarea,select{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:11px;font-size:1rem;font-family:inherit;color:var(--ink);background:var(--surface);}
   textarea{min-height:64px;resize:vertical;}
@@ -867,6 +872,7 @@ function openDetail(id){
     (i.impact?'<span class="pill '+i.impact+'">'+i.impact+'</span> ':'')+
     '<span class="age">reported '+fmt(i.date)+(n>0?' · '+n+'d ago':'')+(i.reporter?' · by '+esc(i.reporter):'')+'</span>'+
     (twins.length?'<div class="dupbtn" style="margin-top:10px" id="d-twin">⚠︎ '+twins.length+' other open report'+(twins.length>1?'s':'')+' for this spot — view</div>':'')+
+    '<label>Urgency</label><div class="urgencygrid" id="d-urgency">'+[['high','High'],['medium','Medium'],['low','Low']].map(p=>'<button class="'+p[0]+(p[0]===i.impact?' sel':'')+'" data-u="'+p[0]+'">'+p[1]+'</button>').join('')+'</div>'+
     '<label>Status</label><div class="statusgrid" id="d-status">'+STATUSES.map(s=>'<button class="'+(s===i.status?'sel':'')+'" data-s="'+s+'">'+s+'</button>').join('')+'</div>'+
     (i.history?'<label>History (from the logs)</label><div class="hist">'+esc(i.history)+'</div>':'')+
     '<label>Work log</label><div>'+(notes.length?notes.map(nt=>'<div class="note"><div class="d">'+fmt(nt.date)+(nt.who?' · '+esc(nt.who):'')+(nt.partNumber?' · part '+esc(nt.partNumber)+(nt.qty?' ×'+nt.qty:''):'')+'</div>'+esc(nt.note)+(nt.photo?'<img class="notephoto" src="'+esc(nt.photo)+'">':'')+'</div>').join(''):'<div class="note" style="color:var(--muted)">No work logged here yet</div>')+'</div>'+
@@ -882,6 +888,7 @@ function openDetail(id){
     (twins.length?'<button class="warn-btn" id="d-dup">Mark this one a duplicate (close it)</button>':'')+
     '<button class="ghost-btn" id="d-close">Done</button>';
   $('#d-status').querySelectorAll('button').forEach(b=>b.onclick=()=>setStatus(id,b.dataset.s));
+  $('#d-urgency').querySelectorAll('button').forEach(b=>b.onclick=()=>setUrgency(id,b.dataset.u));
   $('#d-add').onclick=()=>addNote(id);
   document.getElementById('d-parts').innerHTML=''; addPartRow();
   document.getElementById('d-addpart').onclick=()=>addPartRow();
@@ -899,6 +906,13 @@ async function setStatus(id,status){
     const d=await r.json(); if(d.error) throw new Error(d.error);
     const i=issues.find(x=>x.id===id); if(i){ i.status=status; if(status==='Fixed') i.fixed=new Date().toISOString().slice(0,10); }
     toast('Status updated'); openDetail(id); render();
+  }catch(e){ toast('Could not update'); }
+}
+async function setUrgency(id,urgency){
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'urgency',id:id,urgency:urgency})});
+    const d=await r.json(); if(d.error) throw new Error(d.error);
+    const i=issues.find(x=>x.id===id); if(i){ i.impact=urgency; }
+    toast('Urgency updated'); openDetail(id); render();
   }catch(e){ toast('Could not update'); }
 }
 async function markDuplicate(id, keep){

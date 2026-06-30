@@ -56,6 +56,7 @@ exports.handler = async function (event) {
       const b = JSON.parse(event.body || '{}');
       if (b.action === 'add')    return resp(200, await addIssue(b, headers));
       if (b.action === 'status') return resp(200, await setStatus(b, headers));
+      if (b.action === 'urgency')return resp(200, await setUrgency(b, headers));
       if (b.action === 'note')   return resp(200, await addNote(b, headers));
       if (b.action === 'order')  return resp(200, await orderPart(b, headers));
       if (b.action === 'receive')return resp(200, await receivePart(b, headers));
@@ -145,6 +146,15 @@ async function setStatus(b, headers){
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   // log the status change so the date is captured
   await logWork({ problemId:b.id, who:b.who||'', note:'Status changed to ' + b.status }, headers);
+  return { ok:true };
+}
+
+async function setUrgency(b, headers){
+  // Adrian has the final say on priority — set High / Medium / Low directly.
+  var fields = {}; fields[P.urgency] = cap(b.urgency);
+  var r = await fetch(API + '/' + PROBLEMS + '/' + b.id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  await logWork({ problemId:b.id, who:b.who||'', note:'Priority changed to ' + cap(b.urgency) }, headers);
   return { ok:true };
 }
 
