@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.01-speedphoto -->
+<!-- BUILD STAMP: v2026.07.01-actnest -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -809,11 +809,20 @@ function viewRecent(){
   const buckets={today:[],week:[],month:[]};
   ev.forEach(e=>{ const n=daysAgo(e.date); if(n==null) return; if(n===0)buckets.today.push(e); else if(n<=6)buckets.week.push(e); else if(n<=31)buckets.month.push(e); });
   let h=speedWindow();
-  const sec=(key,title,list)=>{ let inner=''; if(list.length) list.slice(0,80).forEach(e=>inner+=actRow(e)); else inner='<div class="none">Nothing here.</div>';
-    return nestSec(key,title,'<span class="sct">'+list.length+'</span>',inner); };
-  h+=sec('__act_today','Today',buckets.today);
-  h+=sec('__act_week','This week',buckets.week);
-  h+=sec('__act_month','This month',buckets.month);
+  const catOf=e=> e.kind==='Fixed'?'fixed' : (e.kind==='Reported'?'new':'work');
+  const CATS=[['fixed','Fixed'],['new','New report'],['work','Work logged']];
+  const bucketSec=(bkey,btitle,list)=>{
+    const groups={fixed:[],new:[],work:[]};
+    list.forEach(e=>groups[catOf(e)].push(e));
+    let inner='';
+    CATS.forEach(([cat,label])=>{ const g=groups[cat]; let sub='';
+      if(g.length) g.slice(0,80).forEach(e=>sub+=actRow(e)); else sub='<div class="none">Nothing here.</div>';
+      inner+=nestSec(bkey+'_'+cat,label,'<span class="sct">'+g.length+'</span>',sub); });
+    return nestSec(bkey,btitle,'<span class="sct">'+list.length+'</span>',inner);
+  };
+  h+=bucketSec('__act_today','Today',buckets.today);
+  h+=bucketSec('__act_week','This week',buckets.week);
+  h+=bucketSec('__act_month','This month',buckets.month);
   return h;
 }
 function dayLabel(s){ const n=daysAgo(s); if(n===0)return'Today'; if(n===1)return'Yesterday'; const d=dObj(s); return d?d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):s; }
