@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- BUILD STAMP: v2026.06.30-noavg -->
+<!-- BUILD STAMP: v2026.07.01-speedphoto -->
 <title>Chair Check — Report a problem</title>
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--ink:#14202b;--muted:#6b7a89;
@@ -36,6 +36,11 @@
     border-radius:14px;padding:16px;font-size:1.05rem;font-weight:800;cursor:pointer;}
   .primary-btn:disabled{opacity:.5;}
   .primary-btn:active{background:var(--primary-press);}
+  .opt{color:var(--muted);font-weight:600;font-size:.8rem;}
+  .addphoto{width:100%;border:1.5px dashed var(--line);background:var(--surface);color:var(--muted);border-radius:12px;padding:12px;font-weight:700;font-size:.92rem;cursor:pointer;}
+  .photochip{position:relative;display:inline-block;margin-top:2px;}
+  .photochip img{height:120px;border-radius:12px;border:1px solid var(--line);display:block;object-fit:cover;}
+  .photochip button{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;border:none;background:var(--ink);color:#fff;font-weight:800;cursor:pointer;line-height:1;}
   .issue{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;}
   .issue .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline;}
   .issue .loc{font-weight:800;}
@@ -96,6 +101,7 @@ function fmt(d){if(!d)return'';const x=new Date(d+'T00:00');return isNaN(x)?d:x.
 
 let office=qs('office');
 let draft={chair:'',problem:'',impact:'',reporter:''};
+let pendingPhoto=null;
 const AUTO_HIGH=/(compressor|vacuum|\bvac\b|autoclave|sterilizer|steriliz)/i;
 
 // Any office named in the URL is valid — this is how brand-new offices get a working report page.
@@ -134,6 +140,9 @@ function render(){
         <button class="low" data-v="low">Low</button>
       </div>
       <div id="crit-note" class="critnote" style="display:none">⚠ Critical equipment — this will be sent as <b>High</b> priority.</div>
+      <label>Photo <span class="opt">(optional)</span></label>
+      <div id="f-photo"></div>
+      <input id="f-photofile" type="file" accept="image/*" style="display:none">
       <button class="primary-btn" id="submit" disabled>Submit report</button>
     </div>
     <div class="card">
@@ -147,7 +156,31 @@ function render(){
     $('#f-impact').querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x.dataset.v===draft.impact));
     sync();
   });
+  renderPhoto();
+  $('#f-photofile').onchange=async(e)=>{ const f=e.target.files&&e.target.files[0]; if(!f) return;
+    try{ pendingPhoto=await compressImage(f,1280,0.7); }catch(err){ pendingPhoto=null; toast('Could not read that photo'); }
+    renderPhoto(); e.target.value=''; };
   $('#submit').onclick=submit;
+}
+function renderPhoto(){
+  const box=$('#f-photo'); if(!box) return;
+  if(pendingPhoto){ box.innerHTML='<div class="photochip"><img src="'+pendingPhoto.dataUrl+'"><button type="button" id="f-photorm" aria-label="remove photo">×</button></div>';
+    $('#f-photorm').onclick=()=>{ pendingPhoto=null; renderPhoto(); }; }
+  else { box.innerHTML='<button type="button" class="addphoto" id="f-photobtn">+ add a photo</button>';
+    $('#f-photobtn').onclick=()=>$('#f-photofile').click(); }
+}
+function compressImage(file,maxDim,quality){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{ URL.revokeObjectURL(url); let w=img.naturalWidth,h=img.naturalHeight;
+      if(w>h && w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; }
+      else if(h>=w && h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      const durl=c.toDataURL('image/jpeg',quality);
+      resolve({base64:durl.split(',')[1], type:'image/jpeg', name:(file.name||'photo').replace(/\.[^.]+$/,'')+'.jpg', dataUrl:durl}); };
+    img.onerror=()=>reject(new Error('bad image')); img.src=url;
+  });
 }
 function sync(){
   draft.reporter=$('#f-name').value.trim();
@@ -222,11 +255,13 @@ async function submit(){
   if($('#submit').disabled) return;
   $('#submit').disabled=true; $('#submit').textContent='Sending…';
   try{
-    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({action:'add',office:office,chair:draft.chair,problem:draft.problem,impact:draft.impact,reporter:draft.reporter})});
+    const payload={action:'add',office:office,chair:draft.chair,problem:draft.problem,impact:draft.impact,reporter:draft.reporter};
+    if(pendingPhoto){ payload.photo=pendingPhoto.base64; payload.photoType=pendingPhoto.type; payload.photoName=pendingPhoto.name; }
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
     const d=await r.json();
     if(d.error) throw new Error(d.error);
     toast('Reported — thank you!');
+    pendingPhoto=null;
     draft={chair:'',problem:'',impact:'',reporter:draft.reporter};
     render(); $('#f-name').value=draft.reporter; sync(); load();
   }catch(e){
