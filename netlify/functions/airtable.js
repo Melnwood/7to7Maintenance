@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.06.30-noavg
+// BUILD: v2026.07.01-speedphoto
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -42,6 +42,9 @@ exports.handler = async function (event) {
       // People = small Adrian-editable crew list (Name, Active). Optional — falls back to [] if absent.
       var people = [];
       try { people = (await fetchAll('People', headers, '')).map(mapPerson); } catch(e){ people = []; }
+      // Time Log = labor sessions (Start/End per work order). Optional — falls back to [] if absent.
+      var timelog = [];
+      try { timelog = (await fetchAll('Time%20Log', headers, '')).map(mapTime); } catch(e){ timelog = []; }
       // Live office list = union of Offices table + any office found on assets or problems
       var offSet = {};
       offices.forEach(function(o){ var n=String((o.fields[OF.office]||'')).trim(); if(n) offSet[n]=true; });
@@ -49,7 +52,7 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.06.30-noavg',
+        build: 'v2026.07.01-speedphoto',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
@@ -57,6 +60,7 @@ exports.handler = async function (event) {
         assets: assets.map(mapAsset),
         life: life,
         people: people,
+        timelog: timelog,
         officeList: officeList
       });
     }
@@ -74,6 +78,8 @@ exports.handler = async function (event) {
       if (b.action === 'addpart')return resp(200, await addPart(b, headers));
       if (b.action === 'addoffice')return resp(200, await addOffice(b, headers));
       if (b.action === 'addperson')return resp(200, await addPerson(b, headers));
+      if (b.action === 'startwork')return resp(200, await startWork(b, headers));
+      if (b.action === 'endwork')  return resp(200, await endWork(b, headers));
       if (b.action === 'addasset')return resp(200, await addAssets(b, headers));
       if (b.action === 'editasset')return resp(200, await editAsset(b, headers));
       return resp(400, { error: 'unknown action' });
@@ -112,6 +118,10 @@ function mapLife(r){ var f=r.fields; var y=f['Years'];
   return { category:String(f['Category']||'').trim(), years:(y==null||y===''?null:Number(y)) }; }
 function mapPerson(r){ var f=r.fields; var act=f['Active'];
   return { id:r.id, name:String(f['Name']||'').trim(), active:(act===undefined?true:!!act) }; }
+function mapTime(r){ var f=r.fields;
+  return { id:r.id, problemId:String(f['Problem ID']||'').trim(), office:String(f['Office']||'').trim(),
+    chair:String(f['Chair/Area']||'').trim(), who:String(f['Who']||'').trim(),
+    start:f['Start']||'', end:f['End']||'' }; }
 function mapLog(r){ var f=r.fields; var ph=f[W.photo]; return {
   id:r.id, issueId:f[W.problemId]||'', date:f[W.date]||'', who:f[W.who]||'', note:f[W.note]||'',
   partNumber:f[W.partNumber]||'', qty:f[W.qty]||'',
@@ -153,7 +163,16 @@ async function addIssue(b, headers){
   var r = await fetch(API + '/' + PROBLEMS, { method:'POST', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   var j = await r.json();
-  return { ok:true, id:j.id };
+  var out = { ok:true, id:j.id };
+  // optional photo from the reporter — ride it in on an initial Work Log entry (non-fatal)
+  if (b.photo){
+    try {
+      var wlId = await logWork({ problemId:j.id, who:b.reporter||'', note:'Photo from reporter' }, headers);
+      await uploadPhoto(wlId, b.photo, b.photoType, b.photoName, headers);
+      out.photo = true;
+    } catch (e){ out.photo = false; out.photoError = String((e && e.message) || e); }
+  }
+  return out;
 }
 
 async function setStatus(b, headers){
@@ -362,6 +381,25 @@ async function addOffice(b, headers){
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   var j = await r.json();
   return { ok:true, id:j.id, office:name };
+}
+
+// clock in: start an office visit (records office + who + the moment)
+async function startWork(b, headers){
+  var when = b.when || new Date().toISOString();
+  var fields = { 'Office': String(b.office||'').trim(), 'Who': String(b.who||'').trim(), 'Start': when };
+  var r = await fetch(API + '/' + encodeURIComponent('Time Log'), { method:'POST', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  var j = await r.json();
+  return { ok:true, id:j.id, start:when };
+}
+// close a labor session (stamp the end time on an existing Time Log row)
+async function endWork(b, headers){
+  var id = String(b.id||'').trim();
+  if (!id) return { ok:false, error:'No open session id.' };
+  var when = b.when || new Date().toISOString();
+  var r = await fetch(API + '/' + encodeURIComponent('Time Log') + '/' + id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:{ 'End': when }, typecast:true }) });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  return { ok:true, id:id, end:when };
 }
 
 // add a crew member to the People table (Adrian self-serves from the Manage tab)
