@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-partsrpt -->
+<!-- BUILD STAMP: v2026.07.02-crewrm -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -174,6 +174,8 @@
   .kvcap{font-size:.74rem;color:var(--muted);padding:2px 4px 8px;}
   .kv b i{font-style:normal;font-weight:600;color:var(--muted);font-size:.78rem;}
   .kv:last-child{border-bottom:none;} .kv b{color:var(--ink);}
+  .crewx{background:none;border:1px solid var(--line);color:#b0384a;border-radius:8px;padding:4px 11px;font-size:.78rem;font-weight:700;cursor:pointer;flex:0 0 auto;}
+  .crewx:active{transform:scale(.95);}
   .arow{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);}
   .arow:last-child{border-bottom:none;}
   .arow .al{flex:1;min-width:0;} .arow .an{font-weight:700;font-size:.88rem;color:var(--ink);}
@@ -338,6 +340,7 @@ let assets=[], life=[], lifeMap={};
 let officeData=[];
 const CREW=['Adrian Ellenwood','Grumpy'];
 let crew=CREW.slice();
+let peopleData=[];
 const STATUSES=['New','In progress','Pending','Part ordered','Fixed'];
 const FLOW=['New','In progress','Pending','Part ordered'];
 const PRILABEL={high:'High',medium:'Medium',low:'Low'};
@@ -399,6 +402,7 @@ async function load(){
     life.forEach(r=>{ if(r&&r.category&&typeof r.years==='number'&&!isNaN(r.years)) lifeMap[r.category]=r.years; });
     const ppl=(d.people||[]).filter(p=>p&&p.active&&p.name).map(p=>p.name);
     crew = ppl.length? ppl : CREW.slice();
+    peopleData = d.people||[];
     // Rebuild "not a duplicate" decisions from the Work Log so they persist across reloads/redeploys.
     dismissed={};
     log.forEach(l=>{ const m=/\[dupe-key:([^\]]+)\]/.exec(l.note||''); if(m) dismissed[m[1]]=true; });
@@ -1376,7 +1380,10 @@ function viewManage(){
   h+='<button class="addpart-wide" id="mg-addperson">+ Add a maintenance person</button>';
   h+='<div class="vhdr">Maintenance crew<span class="vn">'+crew.length+'</span></div>';
   h+='<div class="hint">These names show up in the “Who did the work?” list. Add or remove people anytime.</div><div class="panel">';
-  if(crew.length){ crew.forEach(c=>{ h+='<div class="kv"><span>'+esc(c)+'</span></div>'; }); }
+  const activePeople=(peopleData||[]).filter(p=>p&&p.active&&p.name);
+  if(activePeople.length){ activePeople.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(p=>{
+    h+='<div class="kv"><span>'+esc(p.name)+'</span><button class="crewx" data-delperson="'+esc(p.id)+'" data-delname="'+esc(p.name)+'">Remove</button></div>'; }); }
+  else if(crew.length){ crew.forEach(c=>{ h+='<div class="kv"><span>'+esc(c)+'</span></div>'; }); }
   else h+='<div class="none">No crew added yet.</div>';
   h+='</div>';
   h+='<div class="vhdr">Offices<span class="vn">'+officeNames.length+'</span></div>';
@@ -1408,6 +1415,28 @@ async function doAddPerson(){
     const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not add');
     crew.push(name); toast('Added '+name); hide(); render();
   }catch(e){ btn.disabled=false; btn.textContent='Add person'; err.textContent=String(e.message||'Could not add'); }
+}
+function openRemovePerson(id,name){
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 4px">Remove '+esc(name)+'?</h2>'+
+    '<div class="hint">They\u2019ll stop showing in the “Who did the work?” list. Their name stays on all the work they\u2019ve already logged, so past reports don\u2019t change \u2014 and you can add them back anytime.</div>'+
+    '<div id="rmp-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="rmp-yes">Remove from list</button>'+
+    '<button class="ghost-btn" id="rmp-no">Cancel</button>';
+  document.getElementById('rmp-yes').onclick=()=>doRemovePerson(id,name);
+  document.getElementById('rmp-no').onclick=hide;
+  show();
+}
+async function doRemovePerson(id,name){
+  const err=document.getElementById('rmp-err'); const btn=document.getElementById('rmp-yes');
+  if(!id){ err.textContent='This person can\u2019t be removed from here.'; return; }
+  btn.disabled=true; btn.textContent='Removing…';
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'deactivateperson',id:id})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not remove');
+    const p=(peopleData||[]).find(x=>x.id===id); if(p) p.active=false;
+    crew=crew.filter(c=>c!==name);
+    toast('Removed '+name); hide(); render();
+  }catch(e){ btn.disabled=false; btn.textContent='Remove from list'; err.textContent=String(e.message||'Could not remove'); }
 }
 
 function officeSelectHTML(sel){
@@ -1688,6 +1717,7 @@ function wire(){
     document.getElementById('rp2-print').onclick=()=>{ const a=pargs(); openPartsReport(a[0],a[1],a[2]); };
   }
   const mp=document.getElementById('mg-addperson'); if(mp) mp.onclick=()=>openAddPerson();
+  $('#wrap').querySelectorAll('[data-delperson]').forEach(c=>c.onclick=()=>openRemovePerson(c.dataset.delperson,c.dataset.delname));
   $('#wrap').querySelectorAll('[data-mo]').forEach(c=>c.onclick=()=>openOfficeEditor(c.dataset.mo));
   const ws=document.getElementById('wh-search');
   if(ws){ ws.oninput=()=>{ const pos=ws.selectionStart; whSearch=ws.value; render();
