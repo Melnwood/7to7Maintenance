@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.07.01-actnest
+// BUILD: v2026.07.02-opsedit
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -52,7 +52,7 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.07.01-actnest',
+        build: 'v2026.07.02-opsedit',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
@@ -77,6 +77,7 @@ exports.handler = async function (event) {
       if (b.action === 'editpart')return resp(200, await editPart(b, headers));
       if (b.action === 'addpart')return resp(200, await addPart(b, headers));
       if (b.action === 'addoffice')return resp(200, await addOffice(b, headers));
+      if (b.action === 'editoffice')return resp(200, await editOffice(b, headers));
       if (b.action === 'addperson')return resp(200, await addPerson(b, headers));
       if (b.action === 'startwork')return resp(200, await startWork(b, headers));
       if (b.action === 'endwork')  return resp(200, await endWork(b, headers));
@@ -164,6 +165,8 @@ async function addIssue(b, headers){
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   var j = await r.json();
   var out = { ok:true, id:j.id };
+  // total requests so far — the report page uses this to advance the thank-you message one step per submit
+  try { out.count = (await fetchAll(PROBLEMS, headers, '')).length; } catch(e){ /* non-fatal */ }
   // optional photo from the reporter — ride it in on an initial Work Log entry (non-fatal)
   if (b.photo){
     try {
@@ -381,6 +384,23 @@ async function addOffice(b, headers){
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   var j = await r.json();
   return { ok:true, id:j.id, office:name };
+}
+
+// update an existing office's chair count / area names / notes (Manage → tap an office → edit)
+async function editOffice(b, headers){
+  var id = String(b.id || '').trim();
+  if (!id) return { ok:false, error:'No office id.' };
+  var fields = {};
+  if (b.ops !== undefined){
+    if (b.ops === '' || b.ops === null) fields[OF.ops] = null;
+    else fields[OF.ops] = Math.max(Math.round(Number(b.ops) || 0), 0);
+  }
+  if (b.areas !== undefined) fields[OF.areas] = String(b.areas || '').trim();
+  if (b.notes !== undefined) fields[OF.notes] = String(b.notes || '').trim();
+  if (!Object.keys(fields).length) return { ok:false, error:'Nothing to update.' };
+  var r = await fetch(API + '/' + OFFICES + '/' + id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  return { ok:true, id:id };
 }
 
 // clock in: start an office visit (records office + who + the moment)
