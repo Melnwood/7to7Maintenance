@@ -1695,7 +1695,7 @@ function wire(){
   $('#wrap').querySelectorAll('[data-o]').forEach(c=>c.onclick=()=>{ selOffice=c.dataset.o; showOfficeDupes=false; render(); });
   $('#wrap').querySelectorAll('[data-goff]').forEach(c=>c.onclick=()=>{ tab='offices'; selOffice=c.dataset.goff; showOfficeDupes=false; filter='';
     $('#tabs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.t==='offices')); render(); });
-  $('#wrap').querySelectorAll('[data-back]').forEach(c=>c.onclick=()=>{ selOffice=null; showOfficeDupes=false; render(); });
+  $('#wrap').querySelectorAll('[data-back]:not([data-back="hub"]):not([data-back="mg"])').forEach(c=>c.onclick=()=>{ selOffice=null; showOfficeDupes=false; render(); });
   $('#wrap').querySelectorAll('[data-sec]').forEach(c=>c.onclick=()=>{ const s=c.dataset.sec; openSecs[s]=!openSecs[s]; render(); });
   $('#wrap').querySelectorAll('[data-bmode]').forEach(c=>c.onclick=()=>{ boardMode=c.dataset.bmode; render(); });
   $('#wrap').querySelectorAll('[data-officedupes]').forEach(c=>c.onclick=()=>{ showOfficeDupes=!showOfficeDupes; render(); });
