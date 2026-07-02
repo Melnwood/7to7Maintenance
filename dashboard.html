@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-opsedit -->
+<!-- BUILD STAMP: v2026.07.02-partsrpt -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -746,9 +746,76 @@ function openTimeReport(office,from,to){
   if(!w){ toast('Allow pop-ups to open the report'); return; }
   w.document.open(); w.document.write(timeReportPrintHTML(office,from,to)); w.document.close();
 }
+// ---- Parts used (which parts, at which office, over a date range) ----
+function partsUsedRows(office,from,to){
+  const offOk=o=>(!office||office==='All')?true:(o===office);
+  const issById={}; issues.forEach(i=>{ issById[i.id]=i; });
+  const pName={}; parts.forEach(p=>{ pName[String(p.number||'').trim()]=p.name; });
+  const rows=[];
+  log.forEach(l=>{ const num=String(l.partNumber||'').trim(); const q=parseFloat(l.qty)||0;
+    if(!num||q<=0) return;
+    if(!inRangeStr(l.date,from,to)) return;
+    const iss=issById[l.issueId]; const off=(iss&&iss.office)||'';
+    if(!offOk(off)) return;
+    rows.push({ office:off||'(no office)', chair:(iss&&iss.chair)||'', date:l.date||'', who:l.who||'',
+      number:num, name:pName[num]||'', qty:q, problem:(iss&&iss.problem)||'' }); });
+  return rows.sort((a,b)=>(a.office||'').localeCompare(b.office||'')||(a.name||a.number).localeCompare(b.name||b.number)||(a.date||'').localeCompare(b.date||''));
+}
+function partsUsedCSV(office,from,to){
+  const rows=partsUsedRows(office,from,to);
+  const head=['Office','Date','Chair/Area','Part number','Part','Qty used','Who','Job'];
+  const lines=[head.map(csvCell).join(',')];
+  rows.forEach(r=>{ lines.push([r.office,r.date,r.chair,r.number,r.name,r.qty,r.who,r.problem].map(csvCell).join(',')); });
+  return lines.join('\r\n');
+}
+function partsUsedPrintHTML(office,from,to){
+  const rows=partsUsedRows(office,from,to);
+  const totQty=rows.reduce((a,b)=>a+(b.qty||0),0);
+  const offsCovered={}, partsCovered={}; rows.forEach(r=>{ offsCovered[r.office]=true; partsCovered[r.number]=true; });
+  let body='<div class="cards"><div class="kpi"><b>'+totQty+'</b><span>Parts used</span></div>'+
+    '<div class="kpi"><b>'+Object.keys(partsCovered).length+'</b><span>Distinct parts</span></div>'+
+    '<div class="kpi"><b>'+Object.keys(offsCovered).length+'</b><span>Offices</span></div></div>';
+  if(!rows.length){ body+='<p class="empty">No parts were logged as used in this period.</p>'; return reportShell('Parts Used Report',scopeLabel(office),rangeLabel(from,to),body); }
+  // per office → part totals
+  const byO={}; rows.forEach(r=>{ (byO[r.office]=byO[r.office]||[]).push(r); });
+  Object.keys(byO).sort().forEach(o=>{ const list=byO[o]; const agg={};
+    list.forEach(r=>{ const a=agg[r.number]||(agg[r.number]={number:r.number,name:r.name,qty:0,times:0}); a.qty+=r.qty; a.times++; });
+    let sub=0; Object.keys(agg).forEach(k=>sub+=agg[k].qty);
+    body+='<h3>'+esc(o)+' <span class="n">'+sub+' used</span></h3><table><thead><tr><th>Part</th><th>Part #</th><th>Qty used</th><th>Times</th></tr></thead><tbody>';
+    Object.keys(agg).map(k=>agg[k]).sort((a,b)=>b.qty-a.qty||(a.name||'').localeCompare(b.name||'')).forEach(a=>{
+      body+='<tr><td>'+esc(a.name||'—')+'</td><td>'+esc(a.number)+'</td><td>'+a.qty+'</td><td>'+a.times+'</td></tr>'; });
+    body+='</tbody><tfoot><tr><td colspan="2">'+esc(o)+' total</td><td>'+sub+'</td><td></td></tr></tfoot></table>'; });
+  // overall totals by part — the reorder rollup
+  const all={}; rows.forEach(r=>{ const a=all[r.number]||(all[r.number]={number:r.number,name:r.name,qty:0}); a.qty+=r.qty; });
+  body+='<h2>Totals by part'+((office&&office!=='All')?'':' (all offices)')+'</h2><table><thead><tr><th>Part</th><th>Part #</th><th>Total qty</th></tr></thead><tbody>';
+  Object.keys(all).map(k=>all[k]).sort((a,b)=>b.qty-a.qty||(a.name||'').localeCompare(b.name||'')).forEach(a=>{
+    body+='<tr><td>'+esc(a.name||'—')+'</td><td>'+esc(a.number)+'</td><td>'+a.qty+'</td></tr>'; });
+  body+='</tbody></table>';
+  return reportShell('Parts Used Report',scopeLabel(office),rangeLabel(from,to),body);
+}
+function openPartsReport(office,from,to){
+  const w=window.open('','_blank');
+  if(!w){ toast('Allow pop-ups to open the report'); return; }
+  w.document.open(); w.document.write(partsUsedPrintHTML(office,from,to)); w.document.close();
+}
+function viewPartsReport(){
+  let h='<div class="drillback" data-back="hub">‹ Back to reports</div>';
+  h+='<div class="vhdr">Parts used report</div>';
+  h+='<div class="hint">Which parts were used at which office, over a date range. Pick an office and dates, then download a spreadsheet or open a printable report.</div>';
+  h+='<div class="panel">';
+  h+='<label>Office</label><select id="rp2-office"><option>All</option>'+officeNames.map(o=>'<option>'+esc(o)+'</option>').join('')+'</select>';
+  h+='<label>From</label><input type="date" id="rp2-from">';
+  h+='<label>To</label><input type="date" id="rp2-to">';
+  h+='<button class="primary-btn" id="rp2-csv" style="margin-top:14px">⬇ Download CSV</button>';
+  h+='<button class="export-btn" id="rp2-print">📄 Open printable report</button>';
+  h+='<div class="pnote">Counts come from parts the crew logs as <b>used</b> on a job (Part number + Qty). Ordering and receiving don\u2019t count here.</div>';
+  h+='</div>';
+  return h;
+}
 function viewReportPane(){
   if(reportPane==='work') return viewReports();
   if(reportPane==='time') return viewTimeReport();
+  if(reportPane==='parts') return viewPartsReport();
   return viewReportsHub();
 }
 function viewReportsHub(){
@@ -757,6 +824,7 @@ function viewReportsHub(){
   h+='<div class="hint">Pick a report to run. Each one lets you choose an office and date range, then download a spreadsheet or open a printable report for the bosses.</div>';
   h+='<div class="rcard" data-report="work"><div class="ri">🧾</div><div class="rt"><b>Work report</b><span>Completed and still-open work, by office and date range.</span></div><div class="rgo">›</div></div>';
   h+='<div class="rcard" data-report="time"><div class="ri">⏱️</div><div class="rt"><b>Labor time report</b><span>Clock-in / clock-out time at each office, with hours by office and person.</span></div><div class="rgo">›</div></div>';
+  h+='<div class="rcard" data-report="parts"><div class="ri">🧰</div><div class="rt"><b>Parts used report</b><span>Which parts were used at which office, by date range — with totals to reorder.</span></div><div class="rgo">›</div></div>';
   return h;
 }
 function viewReports(){
@@ -1610,6 +1678,14 @@ function wire(){
     document.getElementById('tr-csv').onclick=()=>{ const a=targs();
       downloadCSV('7to7-time-'+(a[0]==='All'?'all':a[0].replace(/[^a-z0-9]+/gi,'-').toLowerCase())+'.csv', timeCSV(a[0],a[1],a[2])); };
     document.getElementById('tr-print').onclick=()=>{ const a=targs(); openTimeReport(a[0],a[1],a[2]); };
+  }
+  if(document.getElementById('rp2-csv')){
+    const f=document.getElementById('rp2-from'), to=document.getElementById('rp2-to');
+    if(f&&!f.value) f.value=monthStart(); if(to&&!to.value) to.value=iso(new Date());
+    const pargs=()=>[gv('rp2-office'),gv('rp2-from'),gv('rp2-to')];
+    document.getElementById('rp2-csv').onclick=()=>{ const a=pargs();
+      downloadCSV('7to7-parts-used-'+(a[0]==='All'?'all':a[0].replace(/[^a-z0-9]+/gi,'-').toLowerCase())+'.csv', partsUsedCSV(a[0],a[1],a[2])); };
+    document.getElementById('rp2-print').onclick=()=>{ const a=pargs(); openPartsReport(a[0],a[1],a[2]); };
   }
   const mp=document.getElementById('mg-addperson'); if(mp) mp.onclick=()=>openAddPerson();
   $('#wrap').querySelectorAll('[data-mo]').forEach(c=>c.onclick=()=>openOfficeEditor(c.dataset.mo));
