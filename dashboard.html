@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-crewrm -->
+<!-- BUILD STAMP: v2026.07.02-clockday -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -176,6 +176,12 @@
   .kv:last-child{border-bottom:none;} .kv b{color:var(--ink);}
   .crewx{background:none;border:1px solid var(--line);color:#b0384a;border-radius:8px;padding:4px 11px;font-size:.78rem;font-weight:700;cursor:pointer;flex:0 0 auto;}
   .crewx:active{transform:scale(.95);}
+  .hdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#27ae60;margin-right:2px;vertical-align:middle;box-shadow:0 0 0 3px rgba(39,174,96,.18);flex:0 0 auto;}
+  .plive{border:1.5px solid #bfead0;background:#f0faf3;border-radius:12px;padding:10px 12px;margin-bottom:8px;}
+  .plive .l1{display:flex;align-items:center;gap:8px;}
+  .plive .pw{flex:1;min-width:0;font-size:.9rem;color:var(--ink);}
+  .plive .pstat{color:#158043;font-weight:800;font-size:.68rem;background:#dff5e6;border-radius:20px;padding:3px 10px;flex:0 0 auto;text-transform:uppercase;letter-spacing:.04em;}
+  .plive .ptime{margin-top:5px;font-size:.78rem;color:#5a6b78;font-weight:600;padding-left:16px;}
   .arow{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);}
   .arow:last-child{border-bottom:none;}
   .arow .al{flex:1;min-width:0;} .arow .an{font-weight:700;font-size:.88rem;color:var(--ink);}
@@ -353,7 +359,7 @@ let pendingPhoto=null;
 let whMode='order', whSearch='';
 let invMode='parts', assetSearch='', assetDrill='';
 let timelog=[], reportPane=null, lastWorker='';
-let openSecs={'__replacesoon':true};
+let openSecs={'__replacesoon':true,'__clock':true};
 let boardMode='status';
 let dismissed={}, showDupes=false, showOfficeDupes=false;
 
@@ -875,6 +881,29 @@ function speedWindow(){
   rows.forEach(r=>{ inner+='<div class="sprow"><span class="spo">'+esc(r.office)+'</span><b>'+fmtDays(r.avg)+'</b><i>'+r.n+' done</i></div>'; });
   return nestSec('__speed','How fast we close requests','<span class="sct">'+fmtDays(avg)+' avg</span>', inner);
 }
+function presenceToday(){
+  const isToday=s=>{ const d=String(s||'').slice(0,10); return !!d && daysAgo(d)===0; };
+  const here=timelog.filter(t=>t.start && !t.end).slice().sort((a,b)=>String(a.start).localeCompare(String(b.start)));
+  const outToday=timelog.filter(t=>t.start && t.end && isToday(t.end)).slice().sort((a,b)=>String(b.end).localeCompare(String(a.end)));
+  if(!here.length && !outToday.length) return '';
+  let h='';
+  if(here.length){
+    h+='<div class="secthead">Clocked in now</div>';
+    here.forEach(t=>{ const mins=durMin(t.start,new Date().toISOString()); const stoday=isToday(t.start);
+      h+='<div class="plive"><div class="l1"><span class="hdot"></span>'+
+         '<span class="pw"><b>'+esc(t.who||'—')+'</b> — '+esc(t.office||'—')+'</span>'+
+         '<span class="pstat">Clocked in</span></div>'+
+         '<div class="ptime">'+(stoday?('since '+esc(fmtClock(t.start))):('since '+esc(fmtDayT(t.start))+' '+esc(fmtClock(t.start))))+
+         ' · '+durLabel(mins)+'</div></div>'; });
+  }
+  if(outToday.length){
+    h+='<div class="secthead">Clocked in / out today</div><div class="panel">';
+    outToday.forEach(t=>{ const m=durMin(t.start,t.end);
+      h+='<div class="kv"><span><b>'+esc(t.who||'—')+'</b> — '+esc(t.office||'—')+'</span><b>'+esc(fmtClock(t.start))+' – '+esc(fmtClock(t.end))+' <i>'+durLabel(m)+'</i></b></div>'; });
+    h+='</div>';
+  }
+  return h;
+}
 function viewRecent(){
   const ev=[];
   issues.forEach(i=>{ if(i.fixed) ev.push({date:i.fixed,kind:'Fixed',i}); if(i.date) ev.push({date:i.date,kind:'Reported',i}); });
@@ -895,8 +924,10 @@ function viewRecent(){
     return nestSec(bkey,btitle,'<span class="sct">'+list.length+'</span>',inner);
   };
   h+=bucketSec('__act_today','Today',buckets.today);
-  h+=bucketSec('__act_week','This week',buckets.week);
-  h+=bucketSec('__act_month','This month',buckets.month);
+  const clock=presenceToday();
+  if(clock){ const hereNow=timelog.filter(t=>t.start&&!t.end).length;
+    const chip=hereNow>0?('<span class="sct" style="color:#158043;font-weight:800">'+hereNow+' in</span>'):'';
+    h+=nestSec('__clock','Clock in / out',chip,clock); }
   return h;
 }
 function dayLabel(s){ const n=daysAgo(s); if(n===0)return'Today'; if(n===1)return'Yesterday'; const d=dObj(s); return d?d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):s; }
