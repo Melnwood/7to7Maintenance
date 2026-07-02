@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.07.02-partsrpt
+// BUILD: v2026.07.02-crewrm
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -52,7 +52,7 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.07.02-partsrpt',
+        build: 'v2026.07.02-crewrm',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
@@ -79,6 +79,7 @@ exports.handler = async function (event) {
       if (b.action === 'addoffice')return resp(200, await addOffice(b, headers));
       if (b.action === 'editoffice')return resp(200, await editOffice(b, headers));
       if (b.action === 'addperson')return resp(200, await addPerson(b, headers));
+      if (b.action === 'deactivateperson')return resp(200, await deactivatePerson(b, headers));
       if (b.action === 'startwork')return resp(200, await startWork(b, headers));
       if (b.action === 'endwork')  return resp(200, await endWork(b, headers));
       if (b.action === 'addasset')return resp(200, await addAssets(b, headers));
@@ -430,6 +431,15 @@ async function addPerson(b, headers){
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   var j = await r.json();
   return { ok:true, id:j.id, name:name };
+}
+
+// take a crew member off the active list (sets Active = false; keeps their name on past work)
+async function deactivatePerson(b, headers){
+  var id = String(b.id || '').trim();
+  if (!id) return { ok:false, error:'No person id.' };
+  var r = await fetch(API + '/' + encodeURIComponent('People') + '/' + id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:{ Active:false }, typecast:true }) });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  return { ok:true, id:id };
 }
 
 // create one or many asset rows in the Assets table (batched 10 per request)
