@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.01-actnest -->
+<!-- BUILD STAMP: v2026.07.02-opsedit -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -335,6 +335,7 @@
 const OFFICES_FALLBACK=['Alamo Ranch','Braun','Bulverde','Cibolo','Forum','Leon Springs','Mission Oaks','Potranco','Sahota','Singing Hills','Stone Oak','TPC'];
 let officeNames=OFFICES_FALLBACK.slice();
 let assets=[], life=[], lifeMap={};
+let officeData=[];
 const CREW=['Adrian Ellenwood','Grumpy'];
 let crew=CREW.slice();
 const STATUSES=['New','In progress','Pending','Part ordered','Fixed'];
@@ -402,6 +403,7 @@ async function load(){
     dismissed={};
     log.forEach(l=>{ const m=/\[dupe-key:([^\]]+)\]/.exec(l.note||''); if(m) dismissed[m[1]]=true; });
     officeNames=(d.officeList&&d.officeList.length)?d.officeList.slice():OFFICES_FALLBACK.slice();
+    officeData=d.offices||[];
     render();
   }catch(e){ $('#wrap').innerHTML='<div class="empty">Could not load.<br><span class="muted">'+esc(e.message||'')+'</span></div>'; }
 }
@@ -1310,8 +1312,10 @@ function viewManage(){
   else h+='<div class="none">No crew added yet.</div>';
   h+='</div>';
   h+='<div class="vhdr">Offices<span class="vn">'+officeNames.length+'</span></div>';
-  h+='<div class="hint">Tap an office to add equipment to it.</div><div class="panel"><div class="ogrid">';
-  officeNames.forEach(o=>{ h+='<button class="ocard clear" data-mo="'+esc(o)+'"><span class="nm">'+esc(o)+'</span><span class="ct">'+(cnt[o]||0)+' item'+((cnt[o]||0)===1?'':'s')+'</span></button>'; });
+  h+='<div class="hint">Tap an office to edit its chair count or add equipment.</div><div class="panel"><div class="ogrid">';
+  officeNames.forEach(o=>{ const rec=officeRec(o); const ops=(rec&&rec.ops!==''&&rec.ops!=null)?rec.ops:null;
+    const sub=(ops!=null?(ops+' chair'+(ops===1?'':'s')+' · '):'')+(cnt[o]||0)+' item'+((cnt[o]||0)===1?'':'s');
+    h+='<button class="ocard clear" data-mo="'+esc(o)+'"><span class="nm">'+esc(o)+'</span><span class="ct">'+sub+'</span></button>'; });
   h+='</div></div>';
   return h;
 }
@@ -1367,6 +1371,46 @@ async function doAddOffice(){
   }catch(e){ btn.disabled=false; btn.textContent='Add office'; err.textContent=String(e.message||'Could not add'); }
 }
 
+function officeRec(name){ return (officeData||[]).find(o=>o&&String(o.office).toLowerCase()===String(name).toLowerCase()); }
+
+function openOfficeEditor(name){
+  const rec=officeRec(name);
+  const cnt={}; assets.forEach(a=>{ if(a.office) cnt[a.office]=(cnt[a.office]||0)+1; });
+  const items=cnt[name]||0;
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 4px">'+esc(name)+'</h2>'+
+    '<div class="hint">Update this office\u2019s chair count and details. Saves right away \u2014 no spreadsheet needed.</div>'+
+    '<label>Chairs (ops)</label><input id="oe-ops" type="number" inputmode="numeric" min="0" step="1" placeholder="e.g. 13">'+
+    '<label>Area names</label><input id="oe-areas" placeholder="optional">'+
+    '<label>Notes</label><textarea id="oe-notes" rows="3" placeholder="optional"></textarea>'+
+    '<div id="oe-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="oe-save">Save</button>'+
+    '<button class="addpart-wide" id="oe-equip" style="margin-top:10px">+ Add equipment to this office</button>'+
+    '<button class="ghost-btn" id="oe-cancel">Cancel</button>';
+  // set values via JS (avoids attribute-escaping issues with quotes)
+  document.getElementById('oe-ops').value   = (rec&&rec.ops!==''&&rec.ops!=null)?rec.ops:'';
+  document.getElementById('oe-areas').value = (rec&&rec.areas)?rec.areas:'';
+  document.getElementById('oe-notes').value = (rec&&rec.notes)?rec.notes:'';
+  if(!rec||!rec.id){ document.getElementById('oe-err').textContent='This office isn\u2019t in the saved office list yet, so its details can\u2019t be edited here. You can still add equipment.'; }
+  document.getElementById('oe-save').onclick=()=>doSaveOffice(name);
+  document.getElementById('oe-equip').onclick=()=>openAddEquip(name);
+  document.getElementById('oe-cancel').onclick=hide;
+  show(); setTimeout(()=>{ const e=document.getElementById('oe-ops'); if(e) e.focus(); },60);
+}
+async function doSaveOffice(name){
+  const rec=officeRec(name); const err=document.getElementById('oe-err');
+  if(!rec||!rec.id){ err.textContent='This office isn\u2019t saved in the office list yet — add it as a new office first.'; return; }
+  const opsRaw=(document.getElementById('oe-ops').value||'').trim();
+  if(opsRaw!==''){ const n=Number(opsRaw); if(isNaN(n)||n<0){ err.textContent='Chairs must be a number (0 or more).'; return; } }
+  const areas=(document.getElementById('oe-areas').value||'').trim();
+  const notes=(document.getElementById('oe-notes').value||'').trim();
+  const btn=document.getElementById('oe-save'); btn.disabled=true; btn.textContent='Saving…';
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'editoffice',id:rec.id,ops:opsRaw,areas:areas,notes:notes})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not save');
+    rec.ops=(opsRaw===''?'':Math.max(Math.round(Number(opsRaw)),0)); rec.areas=areas; rec.notes=notes;
+    toast('Saved '+name); hide(); render();
+  }catch(e){ btn.disabled=false; btn.textContent='Save'; err.textContent=String(e.message||'Could not save'); }
+}
 function openAddEquip(prefill){
   const sel=prefill||'';
   $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 10px">Add equipment</h2>'+
@@ -1568,7 +1612,7 @@ function wire(){
     document.getElementById('tr-print').onclick=()=>{ const a=targs(); openTimeReport(a[0],a[1],a[2]); };
   }
   const mp=document.getElementById('mg-addperson'); if(mp) mp.onclick=()=>openAddPerson();
-  $('#wrap').querySelectorAll('[data-mo]').forEach(c=>c.onclick=()=>openAddEquip(c.dataset.mo));
+  $('#wrap').querySelectorAll('[data-mo]').forEach(c=>c.onclick=()=>openOfficeEditor(c.dataset.mo));
   const ws=document.getElementById('wh-search');
   if(ws){ ws.oninput=()=>{ const pos=ws.selectionStart; whSearch=ws.value; render();
     const n=document.getElementById('wh-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }
