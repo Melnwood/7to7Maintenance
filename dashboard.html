@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-clockday -->
+<!-- BUILD STAMP: v2026.07.02-editpart -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -182,6 +182,10 @@
   .plive .pw{flex:1;min-width:0;font-size:.9rem;color:var(--ink);}
   .plive .pstat{color:#158043;font-weight:800;font-size:.68rem;background:#dff5e6;border-radius:20px;padding:3px 10px;flex:0 0 auto;text-transform:uppercase;letter-spacing:.04em;}
   .plive .ptime{margin-top:5px;font-size:.78rem;color:#5a6b78;font-weight:600;padding-left:16px;}
+  .poln{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line);}
+  .polinfo{flex:1;min-width:0;} .polname{font-size:.9rem;font-weight:600;color:var(--ink);}
+  .polmeta{font-size:.75rem;color:var(--muted);margin-top:1px;}
+  .polqty{width:62px;flex:0 0 auto;border:1.5px solid var(--line);border-radius:9px;padding:8px;font-size:1rem;text-align:center;box-sizing:border-box;}
   .arow{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);}
   .arow:last-child{border-bottom:none;}
   .arow .al{flex:1;min-width:0;} .arow .an{font-weight:700;font-size:.88rem;color:var(--ink);}
@@ -344,6 +348,7 @@ const OFFICES_FALLBACK=['Alamo Ranch','Braun','Bulverde','Cibolo','Forum','Leon 
 let officeNames=OFFICES_FALLBACK.slice();
 let assets=[], life=[], lifeMap={};
 let officeData=[];
+let poData=[];
 const CREW=['Adrian Ellenwood','Grumpy'];
 let crew=CREW.slice();
 let peopleData=[];
@@ -414,6 +419,7 @@ async function load(){
     log.forEach(l=>{ const m=/\[dupe-key:([^\]]+)\]/.exec(l.note||''); if(m) dismissed[m[1]]=true; });
     officeNames=(d.officeList&&d.officeList.length)?d.officeList.slice():OFFICES_FALLBACK.slice();
     officeData=d.offices||[];
+    poData=d.purchaseorders||[];
     render();
   }catch(e){ $('#wrap').innerHTML='<div class="empty">Could not load.<br><span class="muted">'+esc(e.message||'')+'</span></div>'; }
 }
@@ -822,10 +828,125 @@ function viewPartsReport(){
   h+='</div>';
   return h;
 }
+// ---- Purchase orders: create in-app, export as NetSuite CSV ----
+const NS_SUBSIDIARY='Pivot Dental Management', NS_UNITS='Each';
+function vendorList(){ const s={}; parts.forEach(p=>{ const v=(p.vendor||'').trim(); if(v) s[v]=true; }); return Object.keys(s).sort(); }
+function nsItemFor(num){ const p=parts.find(x=>String(x.number||'').trim()===String(num||'').trim()); return p?(p.netsuiteItem||''):''; }
+
+function openCreatePO(prefillVendor){
+  const vendors=vendorList();
+  const vopts='<option value="">— choose vendor —</option>'+vendors.map(v=>'<option'+(v===prefillVendor?' selected':'')+'>'+esc(v)+'</option>').join('');
+  const clinics=['Warehouse'].concat(officeNames.slice());
+  const copts=clinics.map(c=>'<option'+(c==='Warehouse'?' selected':'')+'>'+esc(c)+'</option>').join('');
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 4px">Create purchase order</h2>'+
+    '<div class="hint">Pick a vendor and clinic, set quantities, and save. It becomes a PO you can export to NetSuite each week.</div>'+
+    '<label>Vendor</label><select id="po-vendor">'+vopts+'</select>'+
+    '<label>Clinic</label><select id="po-clinic">'+copts+'</select>'+
+    '<div class="kvcap" style="margin:2px 0 8px">Warehouse = general on-hand stock. Pick an office only if it\u2019s bought for that office.</div>'+
+    '<label>Memo (optional)</label><input id="po-memo" placeholder="e.g. Weekly reorder">'+
+    '<div id="po-lines"><div class="none">Choose a vendor to see its parts.</div></div>'+
+    '<div id="po-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="po-save">Save purchase order</button>'+
+    '<button class="ghost-btn" id="po-cancel">Cancel</button>';
+  document.getElementById('po-vendor').onchange=renderPOLines;
+  document.getElementById('po-save').onclick=doCreatePO;
+  document.getElementById('po-cancel').onclick=hide;
+  if(prefillVendor) renderPOLines();
+  show(); setTimeout(()=>{ const e=document.getElementById('po-vendor'); if(e&&!prefillVendor) e.focus(); },60);
+}
+function renderPOLines(){
+  const v=(document.getElementById('po-vendor').value||'').trim();
+  const wrap=document.getElementById('po-lines');
+  if(!v){ wrap.innerHTML='<div class="none">Choose a vendor to see its parts.</div>'; return; }
+  const items=parts.filter(p=>(p.vendor||'').trim()===v).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  if(!items.length){ wrap.innerHTML='<div class="none">No parts on file for '+esc(v)+'.</div>'; return; }
+  let h='<label style="margin-top:12px">Parts &amp; quantities</label>'+
+        '<div class="kvcap" style="margin-bottom:4px">Suggested quantities bring each part back up to Max. Edit freely — only lines with a quantity get ordered.</div>';
+  items.forEach(p=>{ const onh=parseFloat(p.inStock), mx=parseFloat(p.max);
+    let sug=0; if(!isNaN(mx)&&!isNaN(onh)) sug=Math.max(mx-onh,0); else if(p.orderNow) sug=1;
+    const flag=p.orderNow?' <span class="idle bad" style="font-size:.66rem">order now</span>':'';
+    const noNS=p.netsuiteItem?'':' · <span style="color:#b0384a">no NS item</span>';
+    h+='<div class="poln" data-num="'+esc(p.number)+'" data-name="'+esc(p.name)+'" data-rate="'+esc(String(p.cost))+'">'+
+       '<div class="polinfo"><div class="polname">'+esc(p.name)+flag+'</div>'+
+       '<div class="polmeta">#'+esc(p.number)+(p.inStock!==''?' · '+esc(p.inStock)+' on hand':'')+(p.cost!==''?' · $'+esc(p.cost):'')+noNS+'</div></div>'+
+       '<input class="polqty" type="number" inputmode="numeric" min="0" step="1"></div>'; });
+  wrap.innerHTML=h;
+  const rows=wrap.querySelectorAll('.poln'); let i=0;
+  items.forEach(p=>{ const onh=parseFloat(p.inStock), mx=parseFloat(p.max);
+    let sug=0; if(!isNaN(mx)&&!isNaN(onh)) sug=Math.max(mx-onh,0); else if(p.orderNow) sug=1;
+    const inp=rows[i]&&rows[i].querySelector('.polqty'); if(inp) inp.value=sug>0?sug:''; i++; });
+}
+async function doCreatePO(){
+  const v=(document.getElementById('po-vendor').value||'').trim();
+  const clinic=(document.getElementById('po-clinic').value||'').trim();
+  const memo=(document.getElementById('po-memo').value||'').trim();
+  const err=document.getElementById('po-err');
+  if(!v){ err.textContent='Choose a vendor.'; return; }
+  if(!clinic){ err.textContent='Choose a clinic.'; return; }
+  const lines=[];
+  $('#sheet').querySelectorAll('.poln').forEach(row=>{ const q=parseInt(row.querySelector('.polqty').value,10)||0;
+    if(q>0) lines.push({number:row.dataset.num,name:row.dataset.name,qty:q,rate:row.dataset.rate}); });
+  if(!lines.length){ err.textContent='Set a quantity on at least one part.'; return; }
+  const btn=document.getElementById('po-save'); btn.disabled=true; btn.textContent='Saving…';
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'createpo',vendor:v,clinic:clinic,memo:memo,lines:lines})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not save');
+    toast('Created '+(d.ref||'PO')+' · '+d.lines+' line'+(d.lines===1?'':'s')); hide(); load();
+  }catch(e){ btn.disabled=false; btn.textContent='Save purchase order'; err.textContent=String(e.message||'Could not save'); }
+}
+// export
+function poRows(from,to){ return (poData||[]).filter(p=>p.ref && inRangeStr(p.date,from,to)); }
+function poCSV(from,to){
+  const rows=poRows(from,to);
+  const head=['External ID','Date','Vendor','Subsidiary','Clinic','Memo','Item','Quantity','Units','Rate','Amount'];
+  const lines=[head.map(csvCell).join(',')];
+  rows.slice().sort((a,b)=>(a.ref||'').localeCompare(b.ref||'')||(a.partName||'').localeCompare(b.partName||'')).forEach(p=>{
+    const item=nsItemFor(p.partNumber)||p.partName||p.partNumber;
+    const qty=Number(p.qty)||0, rate=(p.rate===''?'':Number(p.rate));
+    const amt=(rate===''?'':Math.round(qty*rate*100)/100);
+    lines.push([p.ref,p.date,p.vendor,NS_SUBSIDIARY,p.clinic,p.memo,item,qty,NS_UNITS,rate,amt].map(csvCell).join(','));
+  });
+  return lines.join('\r\n');
+}
+function poPrintHTML(from,to){
+  const rows=poRows(from,to);
+  const groups={}; rows.forEach(p=>{ (groups[p.ref]=groups[p.ref]||[]).push(p); });
+  const refs=Object.keys(groups).sort();
+  const missing={}; rows.forEach(p=>{ if(!nsItemFor(p.partNumber)) missing[p.partNumber+' — '+(p.partName||'')]=true; });
+  let grand=0; refs.forEach(ref=>groups[ref].forEach(p=>{ const r=(p.rate===''?0:Number(p.rate)); grand+=(Number(p.qty)||0)*r; }));
+  let body='<div class="cards"><div class="kpi"><b>'+refs.length+'</b><span>Purchase orders</span></div>'+
+    '<div class="kpi"><b>'+rows.length+'</b><span>Lines</span></div>'+
+    '<div class="kpi"><b>$'+ (Math.round(grand*100)/100).toLocaleString() +'</b><span>Total</span></div></div>';
+  if(!rows.length){ body+='<p class="empty">No purchase orders in this period.</p>'; return reportShell('Purchase Orders → NetSuite',rangeLabel(from,to),'',body); }
+  if(Object.keys(missing).length){ body+='<h2>Missing NetSuite item — fix before import</h2><p class="empty">These parts have no NetSuite Item set, so their lines won\u2019t match on import: '+Object.keys(missing).map(esc).join('; ')+'</p>'; }
+  refs.forEach(ref=>{ const g=groups[ref]; const h0=g[0]; let sub=0;
+    body+='<h3>'+esc(ref)+' <span class="n">'+esc(h0.vendor)+' · '+esc(h0.clinic)+' · '+esc(h0.date)+'</span></h3>'+
+      '<table><thead><tr><th>Item</th><th>Part #</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>';
+    g.forEach(p=>{ const item=nsItemFor(p.partNumber); const q=Number(p.qty)||0, r=(p.rate===''?'':Number(p.rate)); const amt=(r===''?'':Math.round(q*r*100)/100); if(r!=='') sub+=q*r;
+      body+='<tr><td>'+esc(item||('<i>'+ (p.partName||p.partNumber) +' (no NS item)</i>'))+'</td><td>'+esc(p.partNumber)+'</td><td>'+q+'</td><td>'+(r===''?'—':'$'+r)+'</td><td>'+(amt===''?'—':'$'+amt)+'</td></tr>'; });
+    body+='</tbody><tfoot><tr><td colspan="4">'+esc(ref)+' total</td><td>$'+(Math.round(sub*100)/100)+'</td></tr></tfoot></table>'; });
+  return reportShell('Purchase Orders → NetSuite',rangeLabel(from,to),'',body);
+}
+function openPOReport(from,to){ const w=window.open('','_blank'); if(!w){ toast('Allow pop-ups to open the report'); return; }
+  w.document.open(); w.document.write(poPrintHTML(from,to)); w.document.close(); }
+function viewPOReport(){
+  let h='<div class="drillback" data-back="hub">‹ Back to reports</div>';
+  h+='<div class="vhdr">Purchase orders → NetSuite</div>';
+  h+='<div class="hint">Exports the purchase orders created in the app as a CSV NetSuite can import. Defaults to this week.</div>';
+  h+='<div class="panel">';
+  h+='<label>From</label><input type="date" id="po-from">';
+  h+='<label>To</label><input type="date" id="po-to">';
+  h+='<button class="primary-btn" id="po-csv" style="margin-top:14px">⬇ Download NetSuite CSV</button>';
+  h+='<button class="export-btn" id="po-print">📄 Preview the POs</button>';
+  h+='<div class="pnote">Subsidiary (Pivot Dental Management) and Units (Each) are filled automatically. Item comes from each part\u2019s <b>NetSuite Item</b> field — parts missing it are flagged so you can fix them before importing.</div>';
+  h+='</div>';
+  return h;
+}
 function viewReportPane(){
   if(reportPane==='work') return viewReports();
   if(reportPane==='time') return viewTimeReport();
   if(reportPane==='parts') return viewPartsReport();
+  if(reportPane==='po') return viewPOReport();
   return viewReportsHub();
 }
 function viewReportsHub(){
@@ -835,6 +956,7 @@ function viewReportsHub(){
   h+='<div class="rcard" data-report="work"><div class="ri">🧾</div><div class="rt"><b>Work report</b><span>Completed and still-open work, by office and date range.</span></div><div class="rgo">›</div></div>';
   h+='<div class="rcard" data-report="time"><div class="ri">⏱️</div><div class="rt"><b>Labor time report</b><span>Clock-in / clock-out time at each office, with hours by office and person.</span></div><div class="rgo">›</div></div>';
   h+='<div class="rcard" data-report="parts"><div class="ri">🧰</div><div class="rt"><b>Parts used report</b><span>Which parts were used at which office, by date range — with totals to reorder.</span></div><div class="rgo">›</div></div>';
+  h+='<div class="rcard" data-report="po"><div class="ri">🧾</div><div class="rt"><b>Purchase orders → NetSuite</b><span>Export the week\u2019s purchase orders as a CSV to import into NetSuite.</span></div><div class="rgo">›</div></div>';
   return h;
 }
 function viewReports(){
@@ -985,6 +1107,7 @@ function partsDashboard(){
     '<div class="stat"><b>'+toOrder.length+'</b><span>To order</span></div>'+
     '<div class="stat"><b style="font-size:1.15rem">'+valStr+'</b><span>On the shelf</span></div>'+
     '<div class="stat"><b>'+onOrder.length+'</b><span>On order</span></div></div>';
+  h+='<button class="addpart-wide" id="wh-createpo">🧾 Create a purchase order</button>';
   if(haveCost<parts.length){ h+='<div class="pnote">Add a <b>Unit cost</b> to parts in Airtable to see shelf value — '+haveCost+' of '+parts.length+' have one so far.</div>'; }
   h+='<div class="secthead">Fast movers'+(haveDated?' · last 12 months':' · most used')+'</div><div class="panel">';
   if(movers.length){ const mx=haveDated?(movers[0].u.year||1):(movers[0].u.all||1);
@@ -1316,12 +1439,14 @@ function openPart(number){
      '<div class="twocol"><div><input id="pt-min" type="number" min="0" placeholder="min" value="'+(p.reorderAt===''||p.reorderAt==null?'':esc(p.reorderAt))+'"><div class="lvllbl">min · reorder at</div></div>'+
      '<div><input id="pt-max" type="number" min="0" placeholder="max" value="'+(typeof p.max==='number'?esc(p.max):'')+'"><div class="lvllbl">max · target</div></div></div>'+
      '<button class="primary-btn" style="background:var(--navy)" id="pt-lvl">Save min / max</button>'+
+     '<button class="ghost-btn" id="pt-edit">✎ Edit part details</button>'+
      '<button class="ghost-btn" id="pt-close">Done</button>';
   $('#sheet').innerHTML=h;
   const oq=document.getElementById('pt-order'); if(oq) oq.onclick=()=>doOrder(p.number);
   const rc=document.getElementById('pt-receive'); if(rc) rc.onclick=()=>doReceive(p.number);
   document.getElementById('pt-set').onclick=()=>doAdjust(p.number);
   const lv=document.getElementById('pt-lvl'); if(lv) lv.onclick=()=>doSaveLevels(p.number);
+  document.getElementById('pt-edit').onclick=()=>openEditPart(p.number);
   document.getElementById('pt-close').onclick=hide;
   show();
 }
@@ -1360,6 +1485,58 @@ async function doAdjust(number){
     const p=partByNumber(number); if(p){ p.inStock=Math.round(v); p.orderNow=(typeof p.reorderAt==='number'&&p.inStock<=p.reorderAt); }
     toast('Count updated'); openPart(number); render();
   }catch(e){ toast('Could not save'); }
+}
+function openEditPart(number){
+  const p=partByNumber(number); if(!p) return;
+  let h='<div class="grab"></div><h2 style="margin:0 0 4px">Edit part</h2>'+
+    '<div class="hint">Change any detail — including the part number. Saves to the warehouse right away.</div>'+
+    '<label>Part name</label><input id="ep-name">'+
+    '<label>Part number</label><input id="ep-number">'+
+    '<label>Vendor</label><input id="ep-vendor">'+
+    '<label>Bin</label><input id="ep-bin">'+
+    '<div class="twocol"><div><label>On hand</label><input id="ep-stock" type="number" min="0" step="1"></div>'+
+    '<div><label>Unit cost ($)</label><input id="ep-cost" type="number" min="0" step="0.01"></div></div>'+
+    '<div class="twocol"><div><label>Reorder at (min)</label><input id="ep-min" type="number" min="0" step="1"></div>'+
+    '<div><label>Max</label><input id="ep-max" type="number" min="0" step="1"></div></div>'+
+    '<label>NetSuite Item</label><input id="ep-ns" placeholder="from finance\u2019s item list">'+
+    '<div id="ep-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="ep-save">Save changes</button>'+
+    '<button class="ghost-btn" id="ep-cancel">Cancel</button>';
+  $('#sheet').innerHTML=h;
+  document.getElementById('ep-name').value=p.name||'';
+  document.getElementById('ep-number').value=p.number||'';
+  document.getElementById('ep-vendor').value=p.vendor||'';
+  document.getElementById('ep-bin').value=p.bin||'';
+  document.getElementById('ep-stock').value=(p.inStock===''||p.inStock==null?'':p.inStock);
+  document.getElementById('ep-cost').value=(p.cost===''||p.cost==null?'':p.cost);
+  document.getElementById('ep-min').value=(p.reorderAt===''||p.reorderAt==null?'':p.reorderAt);
+  document.getElementById('ep-max').value=(typeof p.max==='number'?p.max:'');
+  document.getElementById('ep-ns').value=p.netsuiteItem||'';
+  document.getElementById('ep-save').onclick=()=>doSavePart(number);
+  document.getElementById('ep-cancel').onclick=()=>openPart(number);
+  show();
+}
+async function doSavePart(number){
+  const p=partByNumber(number); const err=document.getElementById('ep-err');
+  const name=(document.getElementById('ep-name').value||'').trim();
+  const num=(document.getElementById('ep-number').value||'').trim();
+  if(!name){ err.textContent='Part name can\u2019t be blank.'; return; }
+  if(!num){ err.textContent='Part number can\u2019t be blank.'; return; }
+  const minV=document.getElementById('ep-min').value, maxV=document.getElementById('ep-max').value;
+  if(minV!==''&&maxV!==''&&Number(maxV)<Number(minV)){ err.textContent='Max should be at least the min.'; return; }
+  const btn=document.getElementById('ep-save'); btn.disabled=true; btn.textContent='Saving…';
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({
+      action:'editpart', id:(p?p.id:''), number:num, name:name,
+      vendor:(document.getElementById('ep-vendor').value||'').trim(),
+      bin:(document.getElementById('ep-bin').value||'').trim(),
+      inStock:document.getElementById('ep-stock').value,
+      cost:document.getElementById('ep-cost').value,
+      reorderAt:minV, max:maxV,
+      netsuiteItem:(document.getElementById('ep-ns').value||'').trim() })});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not save');
+    toast('Saved '+name); hide(); load();
+  }catch(e){ btn.disabled=false; btn.textContent='Save changes'; err.textContent=String(e.message||'Could not save'); }
 }
 
 function openAddPart(){
@@ -1714,6 +1891,7 @@ function wire(){
     const n=document.getElementById('as-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }
   $('#wrap').querySelectorAll('[data-part]').forEach(c=>c.onclick=()=>openPart(c.dataset.part));
   const ap=document.getElementById('wh-addpart'); if(ap) ap.onclick=openAddPart;
+  const cpo=document.getElementById('wh-createpo'); if(cpo) cpo.onclick=()=>openCreatePO('');
   const mo=document.getElementById('mg-addoffice'); if(mo) mo.onclick=()=>openAddOffice();
   const me=document.getElementById('mg-addequip'); if(me) me.onclick=()=>openAddEquip('');
   const mrep=document.getElementById('mg-reports'); if(mrep) mrep.onclick=()=>{ reportPane='hub'; window.scrollTo(0,0); render(); };
@@ -1746,6 +1924,16 @@ function wire(){
     document.getElementById('rp2-csv').onclick=()=>{ const a=pargs();
       downloadCSV('7to7-parts-used-'+(a[0]==='All'?'all':a[0].replace(/[^a-z0-9]+/gi,'-').toLowerCase())+'.csv', partsUsedCSV(a[0],a[1],a[2])); };
     document.getElementById('rp2-print').onclick=()=>{ const a=pargs(); openPartsReport(a[0],a[1],a[2]); };
+  }
+  if(document.getElementById('po-csv')){
+    const weekStart=()=>{ const t=new Date(); const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()); d.setDate(d.getDate()-d.getDay()); return iso(d); };
+    const f=document.getElementById('po-from'), to=document.getElementById('po-to');
+    if(f&&!f.value) f.value=weekStart(); if(to&&!to.value) to.value=iso(new Date());
+    const poa=()=>[gv('po-from'),gv('po-to')];
+    document.getElementById('po-csv').onclick=()=>{ const a=poa(); const txt=poCSV(a[0],a[1]);
+      if(txt.split('\r\n').length<=1){ toast('No purchase orders in that range'); return; }
+      downloadCSV('7to7-netsuite-po-'+a[0]+'-to-'+a[1]+'.csv', txt); };
+    document.getElementById('po-print').onclick=()=>{ const a=poa(); openPOReport(a[0],a[1]); };
   }
   const mp=document.getElementById('mg-addperson'); if(mp) mp.onclick=()=>openAddPerson();
   $('#wrap').querySelectorAll('[data-delperson]').forEach(c=>c.onclick=()=>openRemovePerson(c.dataset.delperson,c.dataset.delname));
