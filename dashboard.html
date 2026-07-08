@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-editpart -->
+<!-- BUILD STAMP: v2026.07.02-del -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -2037,7 +2037,8 @@ function openDetail(id){
     '<input id="d-photofile" type="file" accept="image/*" style="display:none">'+
     '<button class="primary-btn" id="d-add">Add to work log</button>'+
     (twins.length?'<button class="warn-btn" id="d-dup">Mark this one a duplicate (close it)</button>':'')+
-    '<button class="ghost-btn" id="d-close">Done</button>';
+    '<button class="ghost-btn" id="d-close">Done</button>'+
+    '<button class="ghost-btn" id="d-delete" style="color:#b0384a;margin-top:2px">🗑 Delete this request</button>';
   $('#d-status').querySelectorAll('button').forEach(b=>b.onclick=()=>setStatus(id,b.dataset.s));
   $('#d-urgency').querySelectorAll('button').forEach(b=>b.onclick=()=>setUrgency(id,b.dataset.u));
   $('#d-add').onclick=()=>addNote(id);
@@ -2048,6 +2049,7 @@ function openDetail(id){
     try{ pendingPhoto=await compressImage(f,1280,0.7); }catch(err){ pendingPhoto=null; toast('Could not read that photo'); }
     renderPhotoPreview(); e.target.value=''; };
   $('#d-close').onclick=hide;
+  document.getElementById('d-delete').onclick=()=>openDeleteRequest(id);
   if(twins.length){ $('#d-twin').onclick=()=>openDetail(twins[0].id); $('#d-dup').onclick=()=>markDuplicate(id, twins[0]); }
   show();
 }
@@ -2080,6 +2082,28 @@ async function markDuplicate(id, keep){
     const i=issues.find(x=>x.id===id); if(i){ i.status='Fixed'; i.fixed=new Date().toISOString().slice(0,10); }
     toast('Closed as duplicate'); hide(); render();
   }catch(e){ toast('Could not update'); }
+}
+function openDeleteRequest(id){
+  const i=issues.find(x=>x.id===id); if(!i) return;
+  const notes=log.filter(n=>n.issueId===id).length;
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 4px">Delete this request?</h2>'+
+    '<div class="hint"><b>'+esc(i.chair||'—')+'</b> · '+esc(i.office)+'<br>“'+esc(i.problem)+'”<br><br>'+
+    'This permanently removes the request'+(notes>0?' and its '+notes+' work-log entr'+(notes===1?'y':'ies'):'')+'. It can\u2019t be undone — use it only for bad or mistaken requests.</div>'+
+    '<div id="dd-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="warn-btn" id="dd-yes" style="background:#b0384a">Delete permanently</button>'+
+    '<button class="ghost-btn" id="dd-no">Cancel</button>';
+  document.getElementById('dd-yes').onclick=()=>doDeleteRequest(id);
+  document.getElementById('dd-no').onclick=()=>openDetail(id);
+  show();
+}
+async function doDeleteRequest(id){
+  const err=document.getElementById('dd-err'); const btn=document.getElementById('dd-yes'); btn.disabled=true; btn.textContent='Deleting…';
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'deleterequest',id:id})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not delete');
+    issues=issues.filter(x=>x.id!==id); log=log.filter(n=>n.issueId!==id);
+    toast('Request deleted'); hide(); render();
+  }catch(e){ btn.disabled=false; btn.textContent='Delete permanently'; err.textContent=String(e.message||'Could not delete'); }
 }
 function addPartRow(num,qty){
   const wrap=document.getElementById('d-parts'); if(!wrap) return;
