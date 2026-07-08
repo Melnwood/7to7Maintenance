@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-inv -->
+<!-- BUILD STAMP: v2026.07.02-equip -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -939,11 +939,50 @@ function viewInventoryReport(){
   h+='</div>';
   return h;
 }
+// ---- Equipment inventory: every asset grouped by office, as of today ----
+function equipCSV(){
+  const head=['Office','Equipment','Location','Make/Model','Serial','Manufacturer','Manufacture date','Age (yrs)','Status','Asset #'];
+  const lines=[head.map(csvCell).join(',')];
+  (assets||[]).slice().sort((a,b)=>(a.office||'').localeCompare(b.office||'')||(a.asset||'').localeCompare(b.asset||'')||(a.location||'').localeCompare(b.location||'')).forEach(a=>{
+    const age=assetAge(a);
+    lines.push([a.office||'(no office)',a.asset,a.location,a.model,a.serial,a.maker,a.date,(age==null?'':age),a.status,a.number].map(csvCell).join(','));
+  });
+  return lines.join('\r\n');
+}
+function equipPrintHTML(){
+  const rows=(assets||[]).slice();
+  const byO={}; rows.forEach(a=>{ const o=a.office||'(no office)'; (byO[o]=byO[o]||[]).push(a); });
+  const offices=Object.keys(byO).sort();
+  const asof=new Date().toISOString().slice(0,10);
+  let body='<div class="cards"><div class="kpi"><b>'+rows.length+'</b><span>Equipment items</span></div>'+
+    '<div class="kpi"><b>'+offices.length+'</b><span>Offices</span></div></div>';
+  if(!rows.length){ body+='<p class="empty">No equipment on file yet.</p>'; return reportShell('Equipment Inventory','As of '+asof,'',body); }
+  offices.forEach(o=>{ const list=byO[o].slice().sort((a,b)=>(a.asset||'').localeCompare(b.asset||'')||(a.location||'').localeCompare(b.location||''));
+    body+='<h3>'+esc(o)+' <span class="n">'+list.length+' item'+(list.length===1?'':'s')+'</span></h3>'+
+      '<table><thead><tr><th>Equipment</th><th>Location</th><th>Make/Model</th><th>Serial</th><th>Manufacturer</th><th>Mfg date</th><th>Age</th><th>Status</th><th>Asset #</th></tr></thead><tbody>';
+    list.forEach(a=>{ const age=assetAge(a); const oos=isOOS(a);
+      body+='<tr'+(oos?' style="background:#fdecec"':'')+'><td>'+esc(a.asset||'—')+'</td><td>'+esc(a.location||'')+'</td><td>'+esc(a.model||'')+'</td><td>'+esc(a.serial||'')+'</td><td>'+esc(a.maker||'')+'</td><td>'+esc(a.date||'')+'</td><td>'+(age==null?'—':age+'y')+'</td><td>'+esc(a.status||'')+'</td><td>'+esc(a.number||'')+'</td></tr>'; });
+    body+='</tbody></table>'; });
+  return reportShell('Equipment Inventory','As of '+asof,'',body);
+}
+function openEquipReport(){ const w=window.open('','_blank'); if(!w){ toast('Allow pop-ups to open the report'); return; } w.document.open(); w.document.write(equipPrintHTML()); w.document.close(); }
+function viewEquipReport(){
+  let h='<div class="drillback" data-back="hub">‹ Back to reports</div>';
+  h+='<div class="vhdr">Equipment inventory</div>';
+  h+='<div class="hint">Every piece of equipment, grouped by office, with all its details as of today. Print it or download it as a spreadsheet.</div>';
+  h+='<div class="panel">';
+  h+='<button class="primary-btn" id="eq-print">📄 Open printable inventory</button>';
+  h+='<button class="export-btn" id="eq-csv">⬇ Download CSV</button>';
+  h+='<div class="pnote">Snapshot as of today — '+(assets?assets.length:0)+' items across the offices. Out-of-service equipment is shaded on the printout.</div>';
+  h+='</div>';
+  return h;
+}
 function viewReportPane(){
   if(reportPane==='work') return viewReports();
   if(reportPane==='time') return viewTimeReport();
   if(reportPane==='parts') return viewPartsReport();
   if(reportPane==='inventory') return viewInventoryReport();
+  if(reportPane==='equipment') return viewEquipReport();
   return viewReportsHub();
 }
 function viewReportsHub(){
@@ -954,6 +993,7 @@ function viewReportsHub(){
   h+='<div class="rcard" data-report="time"><div class="ri">⏱️</div><div class="rt"><b>Labor time report</b><span>Clock-in / clock-out time at each office, with hours by office and person.</span></div><div class="rgo">›</div></div>';
   h+='<div class="rcard" data-report="parts"><div class="ri">🧰</div><div class="rt"><b>Parts used report</b><span>Which parts were used at which office, by date range — with totals to reorder.</span></div><div class="rgo">›</div></div>';
   h+='<div class="rcard" data-report="inventory"><div class="ri">📋</div><div class="rt"><b>Parts inventory</b><span>Full printout of every part on the shelf today, with all details.</span></div><div class="rgo">›</div></div>';
+  h+='<div class="rcard" data-report="equipment"><div class="ri">🖥️</div><div class="rt"><b>Equipment inventory</b><span>Every piece of equipment by office, with all details as of today.</span></div><div class="rgo">›</div></div>';
   return h;
 }
 function viewReports(){
@@ -1925,6 +1965,10 @@ function wire(){
   if(document.getElementById('inv-print')){
     document.getElementById('inv-print').onclick=openInvReport;
     document.getElementById('inv-csv').onclick=()=>{ downloadCSV('7to7-parts-inventory-'+new Date().toISOString().slice(0,10)+'.csv', invCSV()); };
+  }
+  if(document.getElementById('eq-print')){
+    document.getElementById('eq-print').onclick=openEquipReport;
+    document.getElementById('eq-csv').onclick=()=>{ downloadCSV('7to7-equipment-inventory-'+new Date().toISOString().slice(0,10)+'.csv', equipCSV()); };
   }
   const mp=document.getElementById('mg-addperson'); if(mp) mp.onclick=()=>openAddPerson();
   $('#wrap').querySelectorAll('[data-delperson]').forEach(c=>c.onclick=()=>openRemovePerson(c.dataset.delperson,c.dataset.delname));
