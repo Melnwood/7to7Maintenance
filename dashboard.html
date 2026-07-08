@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-equip -->
+<!-- BUILD STAMP: v2026.07.02-clockbanner -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -15,8 +15,9 @@
     padding:calc(13px + env(safe-area-inset-top,0)) 16px 14px;box-shadow:0 4px 14px rgba(30,96,168,.16);}
   .brand{display:flex;align-items:center;gap:12px;}
   .clockbar{margin-top:12px;}
-  .clockstatus{font-size:.8rem;font-weight:800;color:var(--navy);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
-  .clockstatus.live{color:#0e5c30;}
+  .clockstatus{font-size:.82rem;font-weight:800;display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:11px;margin-bottom:8px;cursor:pointer;border:1.5px solid #f2d59a;background:#fff4e0;color:#8a5a00;}
+  .clockstatus.live{background:#e8f7ee;color:#0e5c30;border-color:#bfe6cd;}
+  .clockstatus .cbchev{margin-left:auto;opacity:.6;font-weight:700;white-space:nowrap;}
   .clockbtns{display:flex;gap:8px;}
   .clk{flex:1;border:none;border-radius:12px;padding:12px;font-weight:800;font-size:.98rem;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(20,32,43,.18);}
   .clk.clkin{background:#1f9d57;} .clk.clkout{background:#c0473b;}
@@ -1996,9 +1997,17 @@ function runLabel(startIso){ return durLabel(durMin(startIso,new Date().toISOStr
 function updateClockBar(){
   const st=document.getElementById('clockstatus'); const out=document.getElementById('clk-out'); if(!st||!out) return;
   const ov=openVisits();
-  if(!ov.length){ st.textContent='Not clocked in'; st.classList.remove('live'); out.disabled=true; }
-  else if(ov.length===1){ const v=ov[0]; st.innerHTML='🟢 '+esc(v.who||'Someone')+' at '+esc(v.office||'—')+' · since '+esc(fmtClock(v.start)); st.classList.add('live'); out.disabled=false; }
-  else { st.innerHTML='🟢 '+ov.length+' people clocked in'; st.classList.add('live'); out.disabled=false; }
+  if(!ov.length){
+    st.innerHTML='⏱ Not clocked in <span class="cbchev">tap to clock in ›</span>';
+    st.classList.remove('live'); st.onclick=()=>openClockIn(selOffice||''); out.disabled=true;
+  }
+  else if(ov.length===1){ const v=ov[0]; const mins=durMin(v.start,new Date().toISOString());
+    st.innerHTML='🟢 '+esc(v.who||'Someone')+' at '+esc(v.office||'—')+' · since '+esc(fmtClock(v.start))+' · '+durLabel(mins)+' <span class="cbchev">tap to clock out ›</span>';
+    st.classList.add('live'); st.onclick=()=>doClockOut(v.id); out.disabled=false;
+  }
+  else { st.innerHTML='🟢 '+ov.length+' people clocked in <span class="cbchev">tap to clock out ›</span>';
+    st.classList.add('live'); st.onclick=()=>openClockOutChooser(); out.disabled=false;
+  }
 }
 function clockInTapped(){ openClockIn(selOffice||''); }
 function clockOutTapped(){ const ov=openVisits();
