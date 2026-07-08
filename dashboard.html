@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-del -->
+<!-- BUILD STAMP: v2026.07.02-inv -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -895,50 +895,47 @@ async function doCreatePO(){
   }catch(e){ btn.disabled=false; btn.textContent='Save purchase order'; err.textContent=String(e.message||'Could not save'); }
 }
 // export
-function poRows(from,to){ return (poData||[]).filter(p=>p.ref && inRangeStr(p.date,from,to)); }
-function poCSV(from,to){
-  const rows=poRows(from,to);
-  const head=['External ID','Date','Vendor','Subsidiary','Clinic','Memo','Item','Quantity','Units','Rate','Amount'];
+// ---- Parts inventory: full printout of everything on the shelf, as of today ----
+function invParts(){ return (parts||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')); }
+function invCost(p){ if(typeof p.cost==='number') return p.cost; if(p.cost!==''&&p.cost!=null&&!isNaN(Number(p.cost))) return Number(p.cost); return null; }
+function invCSV(){
+  const rows=invParts();
+  const head=['Part name','Part number','Vendor','Bin','On hand','Reorder at','Max','On order','Unit cost','Shelf value','NetSuite Item','Last ordered'];
   const lines=[head.map(csvCell).join(',')];
-  rows.slice().sort((a,b)=>(a.ref||'').localeCompare(b.ref||'')||(a.partName||'').localeCompare(b.partName||'')).forEach(p=>{
-    const item=nsItemFor(p.partNumber)||p.partName||p.partNumber;
-    const qty=Number(p.qty)||0, rate=(p.rate===''?'':Number(p.rate));
-    const amt=(rate===''?'':Math.round(qty*rate*100)/100);
-    lines.push([p.ref,p.date,p.vendor,NS_SUBSIDIARY,p.clinic,p.memo,item,qty,NS_UNITS,rate,amt].map(csvCell).join(','));
+  rows.forEach(p=>{ const oh=(typeof p.inStock==='number'?p.inStock:''); const c=invCost(p);
+    const val=(oh!==''&&c!=null)?Math.round(oh*c*100)/100:'';
+    lines.push([p.name,p.number,p.vendor,p.bin,oh,(p.reorderAt===''?'':p.reorderAt),(typeof p.max==='number'?p.max:''),(p.onOrder||0),(c==null?'':c),val,p.netsuiteItem,(p.lastOrdered||p.orderDate||'')].map(csvCell).join(','));
   });
   return lines.join('\r\n');
 }
-function poPrintHTML(from,to){
-  const rows=poRows(from,to);
-  const groups={}; rows.forEach(p=>{ (groups[p.ref]=groups[p.ref]||[]).push(p); });
-  const refs=Object.keys(groups).sort();
-  const missing={}; rows.forEach(p=>{ if(!nsItemFor(p.partNumber)) missing[p.partNumber+' — '+(p.partName||'')]=true; });
-  let grand=0; refs.forEach(ref=>groups[ref].forEach(p=>{ const r=(p.rate===''?0:Number(p.rate)); grand+=(Number(p.qty)||0)*r; }));
-  let body='<div class="cards"><div class="kpi"><b>'+refs.length+'</b><span>Purchase orders</span></div>'+
-    '<div class="kpi"><b>'+rows.length+'</b><span>Lines</span></div>'+
-    '<div class="kpi"><b>$'+ (Math.round(grand*100)/100).toLocaleString() +'</b><span>Total</span></div></div>';
-  if(!rows.length){ body+='<p class="empty">No purchase orders in this period.</p>'; return reportShell('Purchase Orders → NetSuite',rangeLabel(from,to),'',body); }
-  if(Object.keys(missing).length){ body+='<h2>Missing NetSuite item — fix before import</h2><p class="empty">These parts have no NetSuite Item set, so their lines won\u2019t match on import: '+Object.keys(missing).map(esc).join('; ')+'</p>'; }
-  refs.forEach(ref=>{ const g=groups[ref]; const h0=g[0]; let sub=0;
-    body+='<h3>'+esc(ref)+' <span class="n">'+esc(h0.vendor)+' · '+esc(h0.clinic)+' · '+esc(h0.date)+'</span></h3>'+
-      '<table><thead><tr><th>Item</th><th>Part #</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>';
-    g.forEach(p=>{ const item=nsItemFor(p.partNumber); const q=Number(p.qty)||0, r=(p.rate===''?'':Number(p.rate)); const amt=(r===''?'':Math.round(q*r*100)/100); if(r!=='') sub+=q*r;
-      body+='<tr><td>'+esc(item||('<i>'+ (p.partName||p.partNumber) +' (no NS item)</i>'))+'</td><td>'+esc(p.partNumber)+'</td><td>'+q+'</td><td>'+(r===''?'—':'$'+r)+'</td><td>'+(amt===''?'—':'$'+amt)+'</td></tr>'; });
-    body+='</tbody><tfoot><tr><td colspan="4">'+esc(ref)+' total</td><td>$'+(Math.round(sub*100)/100)+'</td></tr></tfoot></table>'; });
-  return reportShell('Purchase Orders → NetSuite',rangeLabel(from,to),'',body);
+function invPrintHTML(){
+  const rows=invParts();
+  let units=0, value=0, costed=0;
+  rows.forEach(p=>{ const oh=(typeof p.inStock==='number'?p.inStock:0); units+=oh; const c=invCost(p); if(c!=null){ value+=oh*c; costed++; } });
+  const asof=new Date().toISOString().slice(0,10);
+  let body='<div class="cards"><div class="kpi"><b>'+rows.length+'</b><span>Parts</span></div>'+
+    '<div class="kpi"><b>'+units+'</b><span>Units on hand</span></div>'+
+    '<div class="kpi"><b>$'+(Math.round(value*100)/100).toLocaleString()+'</b><span>Shelf value</span></div></div>';
+  if(costed<rows.length){ body+='<p class="empty">Shelf value covers the '+costed+' of '+rows.length+' parts that have a unit cost entered.</p>'; }
+  if(!rows.length){ body+='<p class="empty">No parts in the warehouse yet.</p>'; return reportShell('Parts Inventory','As of '+asof,'',body); }
+  body+='<table><thead><tr><th>Part</th><th>Part #</th><th>Vendor</th><th>Bin</th><th>On hand</th><th>Min</th><th>Max</th><th>On order</th><th>Unit cost</th><th>Value</th><th>NetSuite Item</th><th>Last ordered</th></tr></thead><tbody>';
+  rows.forEach(p=>{ const oh=(typeof p.inStock==='number'?p.inStock:''); const c=invCost(p);
+    const val=(oh!==''&&c!=null)?('$'+(Math.round(oh*c*100)/100)):'—';
+    const low=p.orderNow?' style="background:#fdecec"':'';
+    body+='<tr'+low+'><td>'+esc(p.name||'—')+'</td><td>'+esc(p.number)+'</td><td>'+esc(p.vendor||'')+'</td><td>'+esc(p.bin||'')+'</td><td>'+(oh===''?'—':oh)+'</td><td>'+(p.reorderAt===''||p.reorderAt==null?'—':esc(String(p.reorderAt)))+'</td><td>'+(typeof p.max==='number'?p.max:'—')+'</td><td>'+(p.onOrder?p.onOrder:'—')+'</td><td>'+(c==null?'—':'$'+c)+'</td><td>'+val+'</td><td>'+esc(p.netsuiteItem||'')+'</td><td>'+esc(p.lastOrdered||p.orderDate||'')+'</td></tr>';
+  });
+  body+='</tbody></table>';
+  return reportShell('Parts Inventory','As of '+asof,'',body);
 }
-function openPOReport(from,to){ const w=window.open('','_blank'); if(!w){ toast('Allow pop-ups to open the report'); return; }
-  w.document.open(); w.document.write(poPrintHTML(from,to)); w.document.close(); }
-function viewPOReport(){
+function openInvReport(){ const w=window.open('','_blank'); if(!w){ toast('Allow pop-ups to open the report'); return; } w.document.open(); w.document.write(invPrintHTML()); w.document.close(); }
+function viewInventoryReport(){
   let h='<div class="drillback" data-back="hub">‹ Back to reports</div>';
-  h+='<div class="vhdr">Purchase orders → NetSuite</div>';
-  h+='<div class="hint">Exports the purchase orders created in the app as a CSV NetSuite can import. Defaults to this week.</div>';
+  h+='<div class="vhdr">Parts inventory</div>';
+  h+='<div class="hint">The full list of every part on the shelf right now, with all its details. Print it or download it as a spreadsheet.</div>';
   h+='<div class="panel">';
-  h+='<label>From</label><input type="date" id="po-from">';
-  h+='<label>To</label><input type="date" id="po-to">';
-  h+='<button class="primary-btn" id="po-csv" style="margin-top:14px">⬇ Download NetSuite CSV</button>';
-  h+='<button class="export-btn" id="po-print">📄 Preview the POs</button>';
-  h+='<div class="pnote">Subsidiary (Pivot Dental Management) and Units (Each) are filled automatically. Item comes from each part\u2019s <b>NetSuite Item</b> field — parts missing it are flagged so you can fix them before importing.</div>';
+  h+='<button class="primary-btn" id="inv-print">📄 Open printable inventory</button>';
+  h+='<button class="export-btn" id="inv-csv">⬇ Download CSV</button>';
+  h+='<div class="pnote">Snapshot as of today — '+(parts?parts.length:0)+' parts. Rows at or below their reorder point are shaded on the printout.</div>';
   h+='</div>';
   return h;
 }
@@ -946,7 +943,7 @@ function viewReportPane(){
   if(reportPane==='work') return viewReports();
   if(reportPane==='time') return viewTimeReport();
   if(reportPane==='parts') return viewPartsReport();
-  if(reportPane==='po') return viewPOReport();
+  if(reportPane==='inventory') return viewInventoryReport();
   return viewReportsHub();
 }
 function viewReportsHub(){
@@ -956,7 +953,7 @@ function viewReportsHub(){
   h+='<div class="rcard" data-report="work"><div class="ri">🧾</div><div class="rt"><b>Work report</b><span>Completed and still-open work, by office and date range.</span></div><div class="rgo">›</div></div>';
   h+='<div class="rcard" data-report="time"><div class="ri">⏱️</div><div class="rt"><b>Labor time report</b><span>Clock-in / clock-out time at each office, with hours by office and person.</span></div><div class="rgo">›</div></div>';
   h+='<div class="rcard" data-report="parts"><div class="ri">🧰</div><div class="rt"><b>Parts used report</b><span>Which parts were used at which office, by date range — with totals to reorder.</span></div><div class="rgo">›</div></div>';
-  h+='<div class="rcard" data-report="po"><div class="ri">🧾</div><div class="rt"><b>Purchase orders → NetSuite</b><span>Export the week\u2019s purchase orders as a CSV to import into NetSuite.</span></div><div class="rgo">›</div></div>';
+  h+='<div class="rcard" data-report="inventory"><div class="ri">📋</div><div class="rt"><b>Parts inventory</b><span>Full printout of every part on the shelf today, with all details.</span></div><div class="rgo">›</div></div>';
   return h;
 }
 function viewReports(){
@@ -1925,15 +1922,9 @@ function wire(){
       downloadCSV('7to7-parts-used-'+(a[0]==='All'?'all':a[0].replace(/[^a-z0-9]+/gi,'-').toLowerCase())+'.csv', partsUsedCSV(a[0],a[1],a[2])); };
     document.getElementById('rp2-print').onclick=()=>{ const a=pargs(); openPartsReport(a[0],a[1],a[2]); };
   }
-  if(document.getElementById('po-csv')){
-    const weekStart=()=>{ const t=new Date(); const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()); d.setDate(d.getDate()-d.getDay()); return iso(d); };
-    const f=document.getElementById('po-from'), to=document.getElementById('po-to');
-    if(f&&!f.value) f.value=weekStart(); if(to&&!to.value) to.value=iso(new Date());
-    const poa=()=>[gv('po-from'),gv('po-to')];
-    document.getElementById('po-csv').onclick=()=>{ const a=poa(); const txt=poCSV(a[0],a[1]);
-      if(txt.split('\r\n').length<=1){ toast('No purchase orders in that range'); return; }
-      downloadCSV('7to7-netsuite-po-'+a[0]+'-to-'+a[1]+'.csv', txt); };
-    document.getElementById('po-print').onclick=()=>{ const a=poa(); openPOReport(a[0],a[1]); };
+  if(document.getElementById('inv-print')){
+    document.getElementById('inv-print').onclick=openInvReport;
+    document.getElementById('inv-csv').onclick=()=>{ downloadCSV('7to7-parts-inventory-'+new Date().toISOString().slice(0,10)+'.csv', invCSV()); };
   }
   const mp=document.getElementById('mg-addperson'); if(mp) mp.onclick=()=>openAddPerson();
   $('#wrap').querySelectorAll('[data-delperson]').forEach(c=>c.onclick=()=>openRemovePerson(c.dataset.delperson,c.dataset.delname));
