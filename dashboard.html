@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-share2 -->
+<!-- BUILD STAMP: v2026.07.02-share22 -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -2056,48 +2056,64 @@ function clockOutTapped(){ const ov=openVisits();
   openClockOutChooser();
 }
 const SHARE_LINK='https://7-to-7-maintenance.netlify.app/dashboard.html';
-function shareText(level){
+function shareLevel(level){
   const pass=(level==='full')?PASSCODE:VIEWCODE;
   const lvl=(level==='full')?'full access (you can make changes)':'view-only access (you can look but not change anything)';
   return {pass:pass, lvl:lvl};
 }
-function openShare(){
-  if(READONLY) return;
-  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 4px">Share access</h2>'+
-    '<div class="hint">Type an email and we\u2019ll open a ready-to-send message with the link and passcode. Perfect for the bosses.</div>'+
-    '<label>Email address(es)</label><input id="sh-email" type="text" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="name@example.com">'+
-    '<div class="kvcap" style="margin:2px 0 8px">Separate several with commas.</div>'+
-    '<label>Access level</label><select id="sh-level"><option value="view">View only \u2014 for bosses (recommended)</option><option value="full">Full access \u2014 can make changes</option></select>'+
-    '<label>Add a note (optional)</label><textarea id="sh-note" rows="2" placeholder="e.g. Here\u2019s the maintenance dashboard"></textarea>'+
-    '<div id="sh-err" class="gateerr" style="text-align:left"></div>'+
-    '<button class="primary-btn" id="sh-send">📧 Open email</button>'+
-    '<button class="ghost-btn" id="sh-copy">Copy link &amp; passcode instead</button>'+
-    '<button class="ghost-btn" id="sh-cancel">Cancel</button>';
-  document.getElementById('sh-send').onclick=doShare;
-  document.getElementById('sh-copy').onclick=doCopyShare;
-  document.getElementById('sh-cancel').onclick=hide;
-  show(); setTimeout(()=>{ const e=document.getElementById('sh-email'); if(e) e.focus(); },60);
-}
-function doShare(){
-  const email=(document.getElementById('sh-email').value||'').trim();
-  const level=(document.getElementById('sh-level').value||'view');
-  const note=(document.getElementById('sh-note').value||'').trim();
-  const err=document.getElementById('sh-err');
-  if(!email){ err.textContent='Enter at least one email address.'; return; }
-  const t=shareText(level);
-  const to=email.split(',').map(s=>s.trim()).filter(Boolean).join(',');
+function buildShare(email,level,note){
+  const t=shareLevel(level);
+  const to=(email||'').split(',').map(s=>s.trim()).filter(Boolean).join(',');
   const subject='7to7 Maintenance \u2014 Chair Check access';
   const body=(note?note+'\n\n':'')+
     'Here\u2019s the 7to7 maintenance dashboard:\n'+SHARE_LINK+'\n\n'+
     'Passcode: '+t.pass+'\n('+t.lvl+')\n\n'+
     'Open the link, enter the passcode, and you\u2019re in.';
-  window.location.href='mailto:'+to+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
-  toast('Opening your email\u2026');
+  return {to:to, subject:subject, body:body};
+}
+function shReadInputs(){
+  return { email:(document.getElementById('sh-email').value||'').trim(),
+    level:(document.getElementById('sh-level').value||'view'),
+    note:(document.getElementById('sh-note').value||'').trim() }; }
+function openShare(){
+  if(READONLY) return;
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 4px">Share access</h2>'+
+    '<div class="hint">Fill in an email, then open it in your mail app or Gmail \u2014 or just copy the link and passcode and paste it anywhere.</div>'+
+    '<label>Email address(es)</label><input id="sh-email" type="text" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="name@example.com">'+
+    '<div class="kvcap" style="margin:2px 0 8px">Separate several with commas.</div>'+
+    '<label>Access level</label><select id="sh-level"><option value="view">View only \u2014 for bosses (recommended)</option><option value="full">Full access \u2014 can make changes</option></select>'+
+    '<label>Add a note (optional)</label><textarea id="sh-note" rows="2" placeholder="e.g. Here\u2019s the maintenance dashboard"></textarea>'+
+    '<div id="sh-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="sh-gmail">Open in Gmail</button>'+
+    '<button class="ghost-btn" id="sh-send" style="margin-top:8px">Open in your mail app</button>'+
+    '<button class="ghost-btn" id="sh-copy">📋 Copy link &amp; passcode</button>'+
+    '<div class="kvcap" style="margin-top:8px">Gmail opens a compose window right in the browser. If your mail app doesn\u2019t pop up, use Gmail or Copy.</div>'+
+    '<button class="ghost-btn" id="sh-cancel" style="margin-top:10px">Cancel</button>';
+  document.getElementById('sh-gmail').onclick=doGmail;
+  document.getElementById('sh-send').onclick=doShare;
+  document.getElementById('sh-copy').onclick=doCopyShare;
+  document.getElementById('sh-cancel').onclick=hide;
+  show(); setTimeout(()=>{ const e=document.getElementById('sh-email'); if(e) e.focus(); },60);
+}
+function doGmail(){
+  const {email,level,note}=shReadInputs(); const err=document.getElementById('sh-err');
+  if(!email){ err.textContent='Enter at least one email address.'; return; }
+  const s=buildShare(email,level,note);
+  const url='https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(s.to)+'&su='+encodeURIComponent(s.subject)+'&body='+encodeURIComponent(s.body);
+  window.open(url,'_blank'); toast('Opening Gmail\u2026');
+}
+function doShare(){
+  const {email,level,note}=shReadInputs(); const err=document.getElementById('sh-err');
+  if(!email){ err.textContent='Enter at least one email address.'; return; }
+  const s=buildShare(email,level,note);
+  const a=document.createElement('a');
+  a.href='mailto:'+s.to+'?subject='+encodeURIComponent(s.subject)+'&body='+encodeURIComponent(s.body);
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Opening your mail app\u2026');
 }
 function doCopyShare(){
-  const level=(document.getElementById('sh-level').value||'view'); const t=shareText(level);
-  const text=SHARE_LINK+'\nPasscode: '+t.pass+' ('+t.lvl+')';
-  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(()=>toast('Link & passcode copied')).catch(()=>toast('Couldn\u2019t copy')); }
+  const {email,level,note}=shReadInputs(); const s=buildShare(email,level,note);
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(s.body).then(()=>toast('Copied \u2014 paste it into an email or text')).catch(()=>toast('Couldn\u2019t copy')); }
   else { toast('Copy isn\u2019t supported here'); }
 }
 function openNewOrder(){
