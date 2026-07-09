@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-boardfix -->
+<!-- BUILD STAMP: v2026.07.02-bosspw2 -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -398,7 +398,7 @@ function clustersIn(list){
 }
 
 const PASSCODE='7to7crew';    // full access (Adrian & crew)
-const VIEWCODE='7to7BOSSES';    // view-only (bosses) — can look around, can't change anything
+const VIEWCODE='7to7bosses';    // view-only (bosses) — can look around, can't change anything
 let READONLY=false;
 function ccRole(){ try{ return localStorage.getItem('cc_role')||''; }catch(e){ return ''; } }
 function ccUnlocked(){ const r=ccRole(); return r==='crew'||r==='viewer'; }
