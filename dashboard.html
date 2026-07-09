@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-share22 -->
+<!-- BUILD STAMP: v2026.07.02-share32 -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -2075,24 +2075,30 @@ function shReadInputs(){
   return { email:(document.getElementById('sh-email').value||'').trim(),
     level:(document.getElementById('sh-level').value||'view'),
     note:(document.getElementById('sh-note').value||'').trim() }; }
+function shComposeMsg(){ const {email,level,note}=shReadInputs(); return buildShare(email,level,note).body; }
+function shUpdateMsg(){ const t=document.getElementById('sh-msg'); if(t) t.value=shComposeMsg(); }
 function openShare(){
   if(READONLY) return;
   $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 4px">Share access</h2>'+
-    '<div class="hint">Fill in an email, then open it in your mail app or Gmail \u2014 or just copy the link and passcode and paste it anywhere.</div>'+
-    '<label>Email address(es)</label><input id="sh-email" type="text" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="name@example.com">'+
+    '<div class="hint">Copy the message below and paste it into an email or text \u2014 or use one of the buttons to open your email with it ready to go.</div>'+
+    '<label>Email address(es) <span class="kvcap">\u2014 only needed for the email buttons</span></label><input id="sh-email" type="text" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="name@example.com">'+
     '<div class="kvcap" style="margin:2px 0 8px">Separate several with commas.</div>'+
     '<label>Access level</label><select id="sh-level"><option value="view">View only \u2014 for bosses (recommended)</option><option value="full">Full access \u2014 can make changes</option></select>'+
     '<label>Add a note (optional)</label><textarea id="sh-note" rows="2" placeholder="e.g. Here\u2019s the maintenance dashboard"></textarea>'+
+    '<label>Message to send</label><textarea id="sh-msg" rows="7" readonly style="background:#f4f6f8;font-size:.85rem"></textarea>'+
     '<div id="sh-err" class="gateerr" style="text-align:left"></div>'+
-    '<button class="primary-btn" id="sh-gmail">Open in Gmail</button>'+
-    '<button class="ghost-btn" id="sh-send" style="margin-top:8px">Open in your mail app</button>'+
-    '<button class="ghost-btn" id="sh-copy">📋 Copy link &amp; passcode</button>'+
-    '<div class="kvcap" style="margin-top:8px">Gmail opens a compose window right in the browser. If your mail app doesn\u2019t pop up, use Gmail or Copy.</div>'+
+    '<button class="primary-btn" id="sh-copy">📋 Copy message</button>'+
+    '<button class="ghost-btn" id="sh-gmail" style="margin-top:8px">Open in Gmail</button>'+
+    '<button class="ghost-btn" id="sh-send">Open in your mail app</button>'+
     '<button class="ghost-btn" id="sh-cancel" style="margin-top:10px">Cancel</button>';
+  document.getElementById('sh-email').oninput=shUpdateMsg;
+  document.getElementById('sh-level').onchange=shUpdateMsg;
+  document.getElementById('sh-note').oninput=shUpdateMsg;
+  document.getElementById('sh-copy').onclick=doCopyShare;
   document.getElementById('sh-gmail').onclick=doGmail;
   document.getElementById('sh-send').onclick=doShare;
-  document.getElementById('sh-copy').onclick=doCopyShare;
   document.getElementById('sh-cancel').onclick=hide;
+  shUpdateMsg();
   show(); setTimeout(()=>{ const e=document.getElementById('sh-email'); if(e) e.focus(); },60);
 }
 function doGmail(){
@@ -2112,9 +2118,13 @@ function doShare(){
   toast('Opening your mail app\u2026');
 }
 function doCopyShare(){
-  const {email,level,note}=shReadInputs(); const s=buildShare(email,level,note);
-  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(s.body).then(()=>toast('Copied \u2014 paste it into an email or text')).catch(()=>toast('Couldn\u2019t copy')); }
-  else { toast('Copy isn\u2019t supported here'); }
+  const t=document.getElementById('sh-msg'); if(!t) return;
+  t.removeAttribute('readonly'); t.focus(); t.select(); try{ t.setSelectionRange(0,99999); }catch(e){}
+  let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+  t.setAttribute('readonly','');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t.value).then(()=>toast('Copied \u2014 paste it into an email')).catch(()=>toast(ok?'Copied \u2014 paste it into an email':'Select the message above and copy it'));
+  } else { toast(ok?'Copied \u2014 paste it into an email':'Select the message above and copy it'); }
 }
 function openNewOrder(){
   const coff=officeNames.map(o=>'<option>'+esc(o)+'</option>').join('');
