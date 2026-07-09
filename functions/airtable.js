@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.07.02-clockbanner
+// BUILD: v2026.07.02-neworder
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -59,7 +59,7 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.07.02-clockbanner',
+        build: 'v2026.07.02-neworder',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
@@ -172,9 +172,11 @@ async function addIssue(b, headers){
   fields[P.office]   = b.office || '';
   fields[P.chair]    = b.chair || '';
   var impact = autoHighImpact(b);
-  if (impact) fields[P.urgency] = cap(impact);
+  if (impact === 'high') fields[P.urgency] = 'High';        // critical equipment is always High
+  else if (b.urgency) fields[P.urgency] = b.urgency;        // manager picked a level explicitly
+  else if (impact) fields[P.urgency] = cap(impact);         // office report's impact choice
   fields[P.reporter] = b.reporter || '';
-  fields[P.status]   = 'New';
+  fields[P.status]   = b.status || 'New';                   // manager can file it straight into a stage
   fields[P.reported] = today();
   var r = await fetch(API + '/' + PROBLEMS, { method:'POST', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
@@ -182,6 +184,8 @@ async function addIssue(b, headers){
   var out = { ok:true, id:j.id };
   // total requests so far — the report page uses this to advance the thank-you message one step per submit
   try { out.count = (await fetchAll(PROBLEMS, headers, '')).length; } catch(e){ /* non-fatal */ }
+  // optional initial note (manager work orders often carry a detail to keep on record)
+  if (b.note){ try { await logWork({ problemId:j.id, who:b.reporter||'', note:b.note }, headers); } catch(e){} }
   // optional photo from the reporter — ride it in on an initial Work Log entry (non-fatal)
   if (b.photo){
     try {

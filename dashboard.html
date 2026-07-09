@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-clockbanner -->
+<!-- BUILD STAMP: v2026.07.02-neworder -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -1620,6 +1620,7 @@ async function doAddPart(){
 function viewManage(){
   const cnt={}; assets.forEach(a=>{ if(a.office) cnt[a.office]=(cnt[a.office]||0)+1; });
   let h='<div class="hint">Add new offices and their equipment here. Anything you add shows up across the app right away — no spreadsheet needed.</div>';
+  h+='<button class="reports-wide" id="mg-neworder" style="background:var(--navy)">🛠 New work order<span>Log a request yourself and put it in the queue</span></button>';
   h+='<button class="reports-wide" id="mg-reports">📄 Reports<span>Work &amp; labor-time reports by office and date</span></button>';
   h+='<button class="addpart-wide" id="mg-addoffice">+ Add a new office</button>';
   h+='<button class="addpart-wide" id="mg-addequip">+ Add equipment to an office</button>';
@@ -1933,6 +1934,7 @@ function wire(){
   const mo=document.getElementById('mg-addoffice'); if(mo) mo.onclick=()=>openAddOffice();
   const me=document.getElementById('mg-addequip'); if(me) me.onclick=()=>openAddEquip('');
   const mrep=document.getElementById('mg-reports'); if(mrep) mrep.onclick=()=>{ reportPane='hub'; window.scrollTo(0,0); render(); };
+  const mno=document.getElementById('mg-neworder'); if(mno) mno.onclick=openNewOrder;
   $('#wrap').querySelectorAll('[data-report]').forEach(c=>c.onclick=()=>{ reportPane=c.dataset.report; window.scrollTo(0,0); render(); });
   const rbMg=$('#wrap').querySelector('[data-back="mg"]'); if(rbMg) rbMg.onclick=()=>{ reportPane=null; render(); };
   const rbHub=$('#wrap').querySelector('[data-back="hub"]'); if(rbHub) rbHub.onclick=()=>{ reportPane='hub'; render(); };
@@ -2014,6 +2016,45 @@ function clockOutTapped(){ const ov=openVisits();
   if(!ov.length){ toast('Nobody\u2019s clocked in'); return; }
   if(ov.length===1){ doClockOut(ov[0].id); return; }
   openClockOutChooser();
+}
+function openNewOrder(){
+  const coff=officeNames.map(o=>'<option>'+esc(o)+'</option>').join('');
+  const cwho=crew.map(c=>'<option'+(c===lastWorker?' selected':'')+'>'+esc(c)+'</option>').join('');
+  const cstat=['New','In progress','Pending','Part ordered'].map(s=>'<option>'+esc(s)+'</option>').join('');
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 4px">New work order</h2>'+
+    '<div class="hint">Log a request yourself — something you spotted or a call that came in — and drop it straight into the queue.</div>'+
+    '<label>Office</label><select id="no-office"><option value="">Pick an office</option>'+coff+'</select>'+
+    '<label>Chair / area</label><input id="no-chair" placeholder="e.g. Op 4, Sterile, Pano">'+
+    '<label>What needs doing?</label><textarea id="no-problem" rows="3" placeholder="Describe the problem or task"></textarea>'+
+    '<div class="twocol"><div><label>Urgency</label><select id="no-urg"><option>High</option><option selected>Medium</option><option>Low</option></select></div>'+
+    '<div><label>Status</label><select id="no-status">'+cstat+'</select></div></div>'+
+    '<label>Logged by</label><select id="no-who"><option value="">Pick a person</option>'+cwho+'</select>'+
+    '<label>Note (optional)</label><textarea id="no-note" rows="2" placeholder="Anything to keep on record"></textarea>'+
+    '<div id="no-err" class="gateerr" style="text-align:left"></div>'+
+    '<button class="primary-btn" id="no-save">Create work order</button>'+
+    '<button class="ghost-btn" id="no-cancel">Cancel</button>';
+  document.getElementById('no-save').onclick=doNewOrder;
+  document.getElementById('no-cancel').onclick=hide;
+  show(); setTimeout(()=>{ const o=document.getElementById('no-office'); if(o) o.focus(); },60);
+}
+async function doNewOrder(){
+  const office=(document.getElementById('no-office').value||'').trim();
+  const chair=(document.getElementById('no-chair').value||'').trim();
+  const problem=(document.getElementById('no-problem').value||'').trim();
+  const urgency=(document.getElementById('no-urg').value||'').trim();
+  const status=(document.getElementById('no-status').value||'').trim();
+  const who=(document.getElementById('no-who').value||'').trim();
+  const note=(document.getElementById('no-note').value||'').trim();
+  const err=document.getElementById('no-err');
+  if(!office){ err.textContent='Pick an office.'; return; }
+  if(!problem){ err.textContent='Describe what needs doing.'; return; }
+  const btn=document.getElementById('no-save'); btn.disabled=true; btn.textContent='Creating…';
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'add',office:office,chair:chair,problem:problem,urgency:urgency,status:status,reporter:who,note:note})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not create');
+    if(who) lastWorker=who;
+    toast('Work order created'); hide(); load();
+  }catch(e){ btn.disabled=false; btn.textContent='Create work order'; err.textContent=String(e.message||'Could not create'); }
 }
 function openClockIn(presetOffice){
   const cwho=crew.map(c=>'<option'+(c===lastWorker?' selected':'')+'>'+esc(c)+'</option>').join('');
