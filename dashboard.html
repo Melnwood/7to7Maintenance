@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-neworder -->
+<!-- BUILD STAMP: v2026.07.02-rolling90 -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -360,6 +360,7 @@ const API='/.netlify/functions/airtable';
 const $=s=>document.querySelector(s);
 const rank={high:0,medium:1,low:2,'':3};
 const MS=86400000;
+const LAUNCH='2026-07-01'; // speed metric counts requests reported on/after this date (excludes pre-launch backfills)
 let issues=[], log=[], parts=[], tab='board', filter='', selOffice=null, sortMode='priority';
 let pendingPhoto=null;
 let whMode='order', whSearch='';
@@ -1031,13 +1032,17 @@ function viewTimeReport(){
 function daysToFix(i){ const a=dObj(i.date), b=dObj(i.fixed); if(!a||!b) return null; const d=Math.round((b-a)/MS); return d>=0?d:null; }
 function fmtDays(d){ if(d==null) return '—'; if(d<0.5) return 'same day'; const r=Math.round(d*10)/10; return r===1?'1 day':r+' days'; }
 function speedWindow(){
-  const done=issues.filter(i=>i.status==='Fixed' && i.date && i.fixed);
+  // rolling last 90 days, but never earlier than launch (July 1) so pre-launch backfills stay out
+  const ninety=new Date(today0().getTime()-90*MS);
+  const c90=ninety.getFullYear()+'-'+String(ninety.getMonth()+1).padStart(2,'0')+'-'+String(ninety.getDate()).padStart(2,'0');
+  const cutoff=c90>LAUNCH?c90:LAUNCH;
+  const done=issues.filter(i=>i.status==='Fixed' && i.date && i.fixed && String(i.date).slice(0,10)>=cutoff);
   const ds=done.map(daysToFix).filter(d=>d!=null);
   if(!ds.length) return nestSec('__speed','How fast we close requests','<span class="sct">no data yet</span>','<div class="none">This fills in as requests get marked Fixed.</div>');
   const avg=ds.reduce((a,b)=>a+b,0)/ds.length;
   const byO={}; done.forEach(i=>{ const d=daysToFix(i); if(d==null) return; (byO[i.office]=byO[i.office]||[]).push(d); });
   const rows=Object.keys(byO).map(o=>{ const arr=byO[o]; return {office:o, avg:arr.reduce((x,y)=>x+y,0)/arr.length, n:arr.length}; }).sort((a,b)=>a.avg-b.avg);
-  let inner='<div class="hint">Average days from when a request comes in to when it\u2019s marked Fixed. Fastest office first.</div>';
+  let inner='<div class="hint">Average days from when a request comes in to when it\u2019s marked Fixed, over the last 90 days (starting July 1). Fastest office first.</div>';
   rows.forEach(r=>{ inner+='<div class="sprow"><span class="spo">'+esc(r.office)+'</span><b>'+fmtDays(r.avg)+'</b><i>'+r.n+' done</i></div>'; });
   return nestSec('__speed','How fast we close requests','<span class="sct">'+fmtDays(avg)+' avg</span>', inner);
 }
