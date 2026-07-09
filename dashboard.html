@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-viewer3 -->
+<!-- BUILD STAMP: v2026.07.02-boardfix -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -526,19 +526,20 @@ function buildPartsHistory(){
 
 function crewSpeedCard(){
   buildPartsHistory();
-  const now=today0(); const cutoff=new Date(now); cutoff.setDate(cutoff.getDate()-90);
+  const now=today0(); const c90=new Date(now); c90.setDate(c90.getDate()-90);
+  const launch=dObj(LAUNCH); const cutoff=(launch && c90<launch)?launch:c90;  // rolling 90 days, never before July 1
   let days=[];
   issues.forEach(i=>{
     if(i.status!=='Fixed' || !i.fixed || !i.date) return;
     const fx=dObj(i.fixed), rp=dObj(i.date); if(!fx||!rp) return;
-    if(fx<cutoff) return;                       // last 90 days only
-    if(everWaitedOnParts(i.id)) return;         // parts-waiters don't count
+    if(rp<cutoff) return;                        // reported since July 1 (then rolling 90 days)
+    if(everWaitedOnParts(i.id)) return;          // parts-waiters don't count
     const d=Math.round((fx-rp)/MS); if(d>=0) days.push(d);
   });
   if(!days.length) return '<div class="speedcard empty2"><b>—</b><span>No fixed requests yet to measure crew speed.<br><span class="sub2">This fills in as jobs get marked fixed.</span></span></div>';
   const avg=days.reduce((a,b)=>a+b,0)/days.length;
   const txt=avg<1?'< 1 day':(avg.toFixed(avg<10?1:0)+(avg<2?' day':' days'));
-  return '<div class="speedcard"><b>'+txt+'</b><span>Average time to fix · last 90 days<br>'+
+  return '<div class="speedcard"><b>'+txt+'</b><span>Average time to fix · last 90 days (from Jul 1)<br>'+
     '<span class="sub2">parts-waiting jobs not counted · '+days.length+' job'+(days.length===1?'':'s')+'</span></span></div>';
 }
 
