@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-invwatermark2 -->
+<!-- BUILD STAMP: v2026.07.02-nsdate2 -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -1063,6 +1063,7 @@ function viewPOReport(){
 // each report only includes un-reported used parts; creating a report stamps them so the next one starts after.
 const NSOFF={'Alamo Ranch':'Alamo'};                 // app office name -> NetSuite office name
 function nsOffice(o){ return NSOFF[o] || o; }
+function nsDate(d){ const p=String(d||'').slice(0,10).split('-'); return (p.length===3)?((+p[1])+'/'+(+p[2])+'/'+p[0]):(d||''); } // 2026-06-10 -> 6/10/2026
 function invAdjUsed(onlyNew){
   const issById={}; issues.forEach(i=>{ issById[i.id]=i; });
   const pName={}; parts.forEach(p=>{ pName[String(p.number||'').trim()]=p.name; });
@@ -1085,7 +1086,7 @@ function invAdjCSV(rows){
   const head=['External ID','Posting Period','Date','Memo','Adjustment Account','Adjustment Office','Item - Internal ID/Name','Adjust Qty. By','Transaction Order','Est. Unit Cost','Hard Code The Following Fields','Subsidiary','Line_Location - Internal ID','Unit of Measure','COGS Account'];
   const lines=[head.map(csvCell).join(',')];
   rows.forEach((r,idx)=>{ const first=(idx===0);
-    lines.push([ r.office+'1961', r.date, r.date, '', '5410.12', r.office, r.number,
+    lines.push([ r.office+'1961', nsDate(r.date), nsDate(r.date), '', '5410.12', r.office, r.number,
       -Math.abs(Math.round(r.qty)), (first?'First transaction in day':''), '', '',
       (first?'Pivot Dental Management':''), (first?'Castle Hills:Warehouse':''), (first?'Each':''), ''
     ].map(csvCell).join(','));
@@ -1098,7 +1099,7 @@ function invAdjPrintHTML(rows,label){
   if(!rows.length){ body+='<p class="empty">Nothing to report.</p>'; return reportShell('Inventory Adjustment → NetSuite',label||'','',body); }
   body+='<p class="empty">Subsidiary / Location / Unit of Measure are written on the first row only, exactly like the template.</p>';
   body+='<table><thead><tr><th>External ID</th><th>Date</th><th>Account</th><th>Office</th><th>Item</th><th>Adjust Qty</th></tr></thead><tbody>';
-  rows.forEach(r=>{ body+='<tr><td>'+esc(r.office+'1961')+'</td><td>'+esc(r.date)+'</td><td>5410.12</td><td>'+esc(r.office)+'</td><td>'+esc(r.number)+(r.name?' <span style="color:#888">'+esc(r.name)+'</span>':'')+'</td><td>-'+Math.abs(Math.round(r.qty))+'</td></tr>'; });
+  rows.forEach(r=>{ body+='<tr><td>'+esc(r.office+'1961')+'</td><td>'+esc(nsDate(r.date))+'</td><td>5410.12</td><td>'+esc(r.office)+'</td><td>'+esc(r.number)+(r.name?' <span style="color:#888">'+esc(r.name)+'</span>':'')+'</td><td>-'+Math.abs(Math.round(r.qty))+'</td></tr>'; });
   body+='</tbody></table>';
   return reportShell('Inventory Adjustment → NetSuite',label||'','',body);
 }
