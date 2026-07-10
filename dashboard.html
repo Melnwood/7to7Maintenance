@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-share32 -->
+<!-- BUILD STAMP: v2026.07.02-invwatermark2 -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -872,6 +872,9 @@ function openCreatePO(prefillVendor){
     '<label>Clinic</label><select id="po-clinic">'+copts+'</select>'+
     '<div class="kvcap" style="margin:2px 0 8px">Warehouse = general on-hand stock. Pick an office only if it\u2019s bought for that office.</div>'+
     '<label>Memo (optional)</label><input id="po-memo" placeholder="e.g. Weekly reorder">'+
+    '<div class="twocol"><div><label>Tax rate %</label><input id="po-tax" type="number" min="0" step="0.001" value="8.25"></div>'+
+    '<div><label>Receive by (optional)</label><input id="po-recv" type="date"></div></div>'+
+    '<div class="kvcap" style="margin:2px 0 8px">One tax rate for the order — NetSuite applies it per line, same as here. San Antonio is 8.25%.</div>'+
     '<div id="po-lines"><div class="none">Choose a vendor to see its parts.</div></div>'+
     '<div id="po-err" class="gateerr" style="text-align:left"></div>'+
     '<button class="primary-btn" id="po-save">Save purchase order</button>'+
@@ -916,8 +919,10 @@ async function doCreatePO(){
     if(q>0) lines.push({number:row.dataset.num,name:row.dataset.name,qty:q,rate:row.dataset.rate}); });
   if(!lines.length){ err.textContent='Set a quantity on at least one part.'; return; }
   const btn=document.getElementById('po-save'); btn.disabled=true; btn.textContent='Saving…';
+  const taxRate=(document.getElementById('po-tax').value||'').trim();
+  const receiveBy=(document.getElementById('po-recv').value||'').trim();
   try{
-    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'createpo',vendor:v,clinic:clinic,memo:memo,lines:lines})});
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'createpo',vendor:v,clinic:clinic,memo:memo,taxRate:taxRate,receiveBy:receiveBy,lines:lines})});
     const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not save');
     toast('Created '+(d.ref||'PO')+' · '+d.lines+' line'+(d.lines===1?'':'s')); hide(); load();
   }catch(e){ btn.disabled=false; btn.textContent='Save purchase order'; err.textContent=String(e.message||'Could not save'); }
@@ -1005,12 +1010,150 @@ function viewEquipReport(){
   h+='</div>';
   return h;
 }
+// ---- Purchase orders: printable sheet with price, tax, and totals ----
+function poRound2(n){ return Math.round((Number(n)||0)*100)/100; }
+function poNumOr(v){ return (v===''||v==null||isNaN(Number(v)))?null:Number(v); }
+function poLineCalc(p){
+  const qty=poNumOr(p.qty)||0, rate=poNumOr(p.rate); const tr=poNumOr(p.taxRate);
+  let amount=poNumOr(p.amount); if(amount==null) amount=(rate!=null?qty*rate:null);
+  let tax=poNumOr(p.taxAmount); if(tax==null) tax=((amount!=null&&tr!=null)?amount*tr/100:null);
+  let total=poNumOr(p.lineTotal); if(total==null) total=(amount!=null?amount:0)+(tax!=null?tax:0);
+  return {qty:qty,rate:rate,amount:amount,tax:tax,total:total,tr:tr};
+}
+function poRows(from,to){ return (poData||[]).filter(p=>p.ref && inRangeStr(p.date,from,to)); }
+function poCSV(from,to){
+  const head=['PO Ref','Date','Vendor','Clinic','Receive by','Item','Part #','Description','Qty','Rate','Amount','Tax rate %','Tax','Line total','Memo'];
+  const lines=[head.map(csvCell).join(',')];
+  poRows(from,to).slice().sort((a,b)=>(a.ref||'').localeCompare(b.ref||'')).forEach(p=>{ const c=poLineCalc(p);
+    lines.push([p.ref,p.date,p.vendor,p.clinic,p.receiveBy,(p.partName||p.partNumber),p.partNumber,p.description,c.qty,(c.rate==null?'':c.rate),(c.amount==null?'':poRound2(c.amount)),(c.tr==null?'':c.tr),(c.tax==null?'':poRound2(c.tax)),poRound2(c.total),p.memo].map(csvCell).join(',')); });
+  return lines.join('\r\n');
+}
+function poPrintHTML(from,to){
+  const rows=poRows(from,to);
+  const groups={}; rows.forEach(p=>{ (groups[p.ref]=groups[p.ref]||[]).push(p); });
+  const refs=Object.keys(groups).sort();
+  let gSub=0,gTax=0,gTot=0;
+  refs.forEach(ref=>groups[ref].forEach(p=>{ const c=poLineCalc(p); gSub+=c.amount||0; gTax+=c.tax||0; gTot+=c.total||0; }));
+  let body='<div class="cards"><div class="kpi"><b>'+refs.length+'</b><span>Purchase orders</span></div><div class="kpi"><b>$'+poRound2(gSub).toLocaleString()+'</b><span>Subtotal</span></div><div class="kpi"><b>$'+poRound2(gTot).toLocaleString()+'</b><span>Total w/ tax</span></div></div>';
+  if(!rows.length){ body+='<p class="empty">No purchase orders in this period.</p>'; return reportShell('Purchase Orders',rangeLabel(from,to),'',body); }
+  refs.forEach(ref=>{ const g=groups[ref]; const h0=g[0]; let sub=0,tax=0,tot=0;
+    body+='<h3>'+esc(ref)+' <span class="n">'+esc(h0.vendor)+' · '+esc(h0.clinic)+' · '+esc(h0.date)+(h0.receiveBy?' · receive by '+esc(h0.receiveBy):'')+'</span></h3>';
+    if(h0.memo) body+='<p class="empty" style="margin:2px 0 8px">Memo: '+esc(h0.memo)+'</p>';
+    body+='<table><thead><tr><th>Item</th><th>Part #</th><th>Qty</th><th>Rate</th><th>Amount</th><th>Tax</th><th>Line total</th></tr></thead><tbody>';
+    g.forEach(p=>{ const c=poLineCalc(p); sub+=c.amount||0; tax+=c.tax||0; tot+=c.total||0;
+      body+='<tr><td>'+esc(p.partName||'—')+(p.description?'<br><span style="color:#777;font-size:.85em">'+esc(p.description)+'</span>':'')+'</td><td>'+esc(p.partNumber)+'</td><td>'+c.qty+'</td><td>'+(c.rate==null?'—':'$'+poRound2(c.rate))+'</td><td>'+(c.amount==null?'—':'$'+poRound2(c.amount))+'</td><td>'+(c.tax==null?'—':'$'+poRound2(c.tax))+'</td><td>$'+poRound2(c.total)+'</td></tr>'; });
+    body+='</tbody><tfoot><tr><td colspan="4">Totals</td><td>$'+poRound2(sub)+'</td><td>$'+poRound2(tax)+'</td><td>$'+poRound2(tot)+'</td></tr></tfoot></table>'; });
+  return reportShell('Purchase Orders',rangeLabel(from,to),'',body);
+}
+function openPOReport(from,to){ const w=window.open('','_blank'); if(!w){ toast('Allow pop-ups to open the report'); return; } w.document.open(); w.document.write(poPrintHTML(from,to)); w.document.close(); }
+function viewPOReport(){
+  let h='<div class="drillback" data-back="hub">‹ Back to reports</div>';
+  h+='<div class="vhdr">Purchase orders</div>';
+  h+='<div class="hint">Every purchase order with prices, tax, and totals. Print it or download a spreadsheet. Defaults to this week.</div>';
+  h+='<div class="panel">';
+  h+='<label>From</label><input type="date" id="po-from">';
+  h+='<label>To</label><input type="date" id="po-to">';
+  h+='<button class="primary-btn" id="po-print">📄 Open printable POs</button>';
+  h+='<button class="export-btn" id="po-csv">⬇ Download CSV</button>';
+  h+='<div class="pnote">Tax is each line\u2019s price × the order\u2019s tax rate — the same way NetSuite figures it, so the totals match.</div>';
+  h+='</div>';
+  return h;
+}
+// ---- NetSuite inventory adjustment export (parts used, by office, negative qty) ----
+// each report only includes un-reported used parts; creating a report stamps them so the next one starts after.
+const NSOFF={'Alamo Ranch':'Alamo'};                 // app office name -> NetSuite office name
+function nsOffice(o){ return NSOFF[o] || o; }
+function invAdjUsed(onlyNew){
+  const issById={}; issues.forEach(i=>{ issById[i.id]=i; });
+  const pName={}; parts.forEach(p=>{ pName[String(p.number||'').trim()]=p.name; });
+  const out=[];
+  log.forEach(l=>{ const num=String(l.partNumber||'').trim(); const q=parseFloat(l.qty)||0;
+    if(!num||q<=0) return;
+    if(onlyNew && l.reportedOn) return;
+    const iss=issById[l.issueId]; const off=nsOffice(((iss&&iss.office)||'').trim())||'(no office)';
+    out.push({id:l.id, office:off, number:num, name:pName[num]||'', date:l.date||'', qty:q}); });
+  return out;
+}
+function invAdjGrouped(onlyNew){
+  const used=invAdjUsed(onlyNew); const map={}; const ids=[];
+  used.forEach(r=>{ ids.push(r.id); const k=r.office+'|'+r.number+'|'+r.date;
+    if(!map[k]) map[k]={office:r.office,number:r.number,name:r.name,date:r.date,qty:0}; map[k].qty+=r.qty; });
+  const rows=Object.keys(map).map(k=>map[k]).sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.office||'').localeCompare(b.office||'')||(a.number||'').localeCompare(b.number||''));
+  return {rows:rows, ids:ids};
+}
+function invAdjCSV(rows){
+  const head=['External ID','Posting Period','Date','Memo','Adjustment Account','Adjustment Office','Item - Internal ID/Name','Adjust Qty. By','Transaction Order','Est. Unit Cost','Hard Code The Following Fields','Subsidiary','Line_Location - Internal ID','Unit of Measure','COGS Account'];
+  const lines=[head.map(csvCell).join(',')];
+  rows.forEach((r,idx)=>{ const first=(idx===0);
+    lines.push([ r.office+'1961', r.date, r.date, '', '5410.12', r.office, r.number,
+      -Math.abs(Math.round(r.qty)), (first?'First transaction in day':''), '', '',
+      (first?'Pivot Dental Management':''), (first?'Castle Hills:Warehouse':''), (first?'Each':''), ''
+    ].map(csvCell).join(','));
+  });
+  return lines.join('\r\n');
+}
+function invAdjPrintHTML(rows,label){
+  const totalQty=rows.reduce((a,b)=>a+b.qty,0); const offs={}; rows.forEach(r=>offs[r.office]=true);
+  let body='<div class="cards"><div class="kpi"><b>'+rows.length+'</b><span>Adjustment rows</span></div><div class="kpi"><b>'+totalQty+'</b><span>Units used</span></div><div class="kpi"><b>'+Object.keys(offs).length+'</b><span>Offices</span></div></div>';
+  if(!rows.length){ body+='<p class="empty">Nothing to report.</p>'; return reportShell('Inventory Adjustment → NetSuite',label||'','',body); }
+  body+='<p class="empty">Subsidiary / Location / Unit of Measure are written on the first row only, exactly like the template.</p>';
+  body+='<table><thead><tr><th>External ID</th><th>Date</th><th>Account</th><th>Office</th><th>Item</th><th>Adjust Qty</th></tr></thead><tbody>';
+  rows.forEach(r=>{ body+='<tr><td>'+esc(r.office+'1961')+'</td><td>'+esc(r.date)+'</td><td>5410.12</td><td>'+esc(r.office)+'</td><td>'+esc(r.number)+(r.name?' <span style="color:#888">'+esc(r.name)+'</span>':'')+'</td><td>-'+Math.abs(Math.round(r.qty))+'</td></tr>'; });
+  body+='</tbody></table>';
+  return reportShell('Inventory Adjustment → NetSuite',label||'','',body);
+}
+function openInvAdjReport(rows,label){ const w=window.open('','_blank'); if(!w){ toast('Allow pop-ups to open the report'); return; } w.document.open(); w.document.write(invAdjPrintHTML(rows,label)); w.document.close(); }
+function lastReportDate(){ let m=''; log.forEach(l=>{ if(l.reportedOn && l.reportedOn>m) m=l.reportedOn; }); return m; }
+async function doCreateInvReport(){
+  const all=!!(document.getElementById('ia-all') && document.getElementById('ia-all').checked);
+  const g=invAdjGrouped(!all);
+  if(!g.rows.length){ toast('Nothing to report'); return; }
+  downloadCSV('7to7-netsuite-inventory-'+new Date().toISOString().slice(0,10)+'.csv', invAdjCSV(g.rows));
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'markreported',ids:g.ids})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not mark');
+    toast('Report created · '+d.marked+' item'+(d.marked===1?'':'s')+' marked reported'); load();
+  }catch(e){ toast('Downloaded, but couldn\u2019t mark reported: '+(e.message||e)); }
+}
+async function undoLastReport(){
+  const last=lastReportDate(); if(!last){ toast('No report to undo'); return; }
+  const ids=log.filter(l=>l.reportedOn===last).map(l=>l.id);
+  if(!ids.length){ toast('Nothing to undo'); return; }
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'markreported',ids:ids,clear:true})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not undo');
+    toast('Undid the report from '+last+' — those items are back in the queue'); load();
+  }catch(e){ toast('Could not undo'); }
+}
+function viewInvAdjReport(){
+  const g=invAdjGrouped(true); const last=lastReportDate();
+  const units=g.rows.reduce((a,b)=>a+b.qty,0);
+  let h='<div class="drillback" data-back="hub">‹ Back to reports</div>';
+  h+='<div class="vhdr">Inventory adjustment → NetSuite</div>';
+  h+='<div class="hint">The parts your crew logged as used, as the NetSuite inventory-adjustment CSV. Each report picks up where the last one left off.</div>';
+  h+='<div class="panel">';
+  h+='<div class="kv"><span>Last report created</span><b>'+(last?esc(last):'never')+'</b></div>';
+  h+='<div class="kv" style="margin-bottom:10px"><span>New since then</span><b>'+g.rows.length+' row'+(g.rows.length===1?'':'s')+' · '+units+' unit'+(units===1?'':'s')+'</b></div>';
+  if(g.rows.length){
+    h+='<button class="primary-btn" id="ia-create">⬇ Create report (CSV — opens in Excel)</button>';
+    h+='<button class="export-btn" id="ia-preview">📄 Preview these rows</button>';
+    h+='<div class="pnote">Creating the report downloads the file <b>and</b> marks these items as reported, so the next report starts after them. Do it when you\u2019re ready to upload to NetSuite.</div>';
+  } else {
+    h+='<div class="none">Nothing new to report — everything used since the last report is already accounted for.</div>';
+    h+='<button class="export-btn" id="ia-preview" style="margin-top:10px">📄 Preview (everything)</button>';
+  }
+  h+='<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.85rem;color:var(--muted)"><input type="checkbox" id="ia-all"> Include everything (ignore the last-report tracking)</label>';
+  if(last) h+='<button class="ghost-btn" id="ia-undo" style="margin-top:10px;color:#b0384a">↩ Undo last report ('+esc(last)+')</button>';
+  h+='</div>';
+  return h;
+}
 function viewReportPane(){
   if(reportPane==='work') return viewReports();
   if(reportPane==='time') return viewTimeReport();
   if(reportPane==='parts') return viewPartsReport();
   if(reportPane==='inventory') return viewInventoryReport();
   if(reportPane==='equipment') return viewEquipReport();
+  if(reportPane==='po') return viewPOReport();
+  if(reportPane==='invadj') return viewInvAdjReport();
   return viewReportsHub();
 }
 function viewReportsHub(){
@@ -1022,6 +1165,8 @@ function viewReportsHub(){
   h+='<div class="rcard" data-report="parts"><div class="ri">🧰</div><div class="rt"><b>Parts used report</b><span>Which parts were used at which office, by date range — with totals to reorder.</span></div><div class="rgo">›</div></div>';
   h+='<div class="rcard" data-report="inventory"><div class="ri">📋</div><div class="rt"><b>Parts inventory</b><span>Full printout of every part on the shelf today, with all details.</span></div><div class="rgo">›</div></div>';
   h+='<div class="rcard" data-report="equipment"><div class="ri">🖥️</div><div class="rt"><b>Equipment inventory</b><span>Every piece of equipment by office, with all details as of today.</span></div><div class="rgo">›</div></div>';
+  h+='<div class="rcard" data-report="po"><div class="ri">🧾</div><div class="rt"><b>Purchase orders</b><span>POs with prices, tax, and totals — printable, by date range.</span></div><div class="rgo">›</div></div>';
+  h+='<div class="rcard" data-report="invadj"><div class="ri">📦</div><div class="rt"><b>Inventory adjustment → NetSuite</b><span>Parts used, by office, as the NetSuite import CSV.</span></div><div class="rgo">›</div></div>';
   return h;
 }
 function viewReports(){
@@ -2010,6 +2155,21 @@ function wire(){
   if(document.getElementById('eq-print')){
     document.getElementById('eq-print').onclick=openEquipReport;
     document.getElementById('eq-csv').onclick=()=>{ downloadCSV('7to7-equipment-inventory-'+new Date().toISOString().slice(0,10)+'.csv', equipCSV()); };
+  }
+  if(document.getElementById('po-print')){
+    const weekStart=()=>{ const t=new Date(); const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()); d.setDate(d.getDate()-d.getDay()); return iso(d); };
+    const f=document.getElementById('po-from'), to=document.getElementById('po-to');
+    if(f&&!f.value) f.value=weekStart(); if(to&&!to.value) to.value=iso(new Date());
+    const poa=()=>[gv('po-from'),gv('po-to')];
+    document.getElementById('po-print').onclick=()=>{ const a=poa(); openPOReport(a[0],a[1]); };
+    document.getElementById('po-csv').onclick=()=>{ const a=poa(); const txt=poCSV(a[0],a[1]);
+      if(txt.split('\r\n').length<=1){ toast('No purchase orders in that range'); return; }
+      downloadCSV('7to7-purchase-orders-'+a[0]+'-to-'+a[1]+'.csv', txt); };
+  }
+  if(document.getElementById('ia-create')||document.getElementById('ia-preview')){
+    const cr=document.getElementById('ia-create'); if(cr) cr.onclick=doCreateInvReport;
+    const pv=document.getElementById('ia-preview'); if(pv) pv.onclick=()=>{ const all=!!(document.getElementById('ia-all')&&document.getElementById('ia-all').checked); const g=invAdjGrouped(!all); openInvAdjReport(g.rows, all?'All used parts':'New since last report'); };
+    const un=document.getElementById('ia-undo'); if(un) un.onclick=undoLastReport;
   }
   const mp=document.getElementById('mg-addperson'); if(mp) mp.onclick=()=>openAddPerson();
   $('#wrap').querySelectorAll('[data-delperson]').forEach(c=>c.onclick=()=>openRemovePerson(c.dataset.delperson,c.dataset.delname));

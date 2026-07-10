@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.07.02-share32
+// BUILD: v2026.07.02-invwatermark2
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -14,7 +14,7 @@ const API = 'https://api.airtable.com/v0/' + BASE_ID;
 const P  = { problem:'Problem', office:'Office', chair:'Chair/Area', urgency:'Urgency',
              status:'Status', reporter:'Reported by', reported:'Reported', fixed:'Date fixed', history:'History' };
 const W  = { entry:'Entry', problemId:'Problem ID', date:'Date', who:'Who', note:'Note',
-             partNumber:'Part number', qty:'Qty used', photo:'Photo' };
+             partNumber:'Part number', qty:'Qty used', photo:'Photo', reportedOn:'Reported on' };
 const PHOTO_FIELD = 'fldEcNp6pnrOaYErL'; // Work Log → Photo (attachments)
 
 // "Max" target per part number (how many they want on the shelf) — from the warehouse sheet
@@ -26,7 +26,9 @@ const AS = { number:'Asset Number', location:'Location', asset:'Asset', serial:'
              model:'Make/Model', date:'Manufacture Date', maker:'Manufacturer', office:'Office', status:'Status', lifeOverride:'Life override' };
 // Purchase Orders — one row per PO line. PO Ref groups lines into one PO; NetSuite numbers it on import.
 const PO = { label:'Name', ref:'PO Ref', date:'Date', vendor:'Vendor', clinic:'Clinic',
-             partNumber:'Part number', partName:'Part name', qty:'Quantity', rate:'Rate', memo:'Notes' };
+             partNumber:'Part number', partName:'Part name', qty:'Quantity', rate:'Rate', memo:'Notes',
+             description:'Description', receiveBy:'Receive by', taxRate:'Tax rate %',
+             amount:'Amount', taxAmount:'Tax amount', lineTotal:'Line total' };
 
 exports.handler = async function (event) {
   const token = process.env.AIRTABLE_TOKEN;
@@ -59,7 +61,7 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.07.02-share32',
+        build: 'v2026.07.02-invwatermark2',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
@@ -94,6 +96,7 @@ exports.handler = async function (event) {
       if (b.action === 'addasset')return resp(200, await addAssets(b, headers));
       if (b.action === 'editasset')return resp(200, await editAsset(b, headers));
       if (b.action === 'createpo')return resp(200, await createPO(b, headers));
+      if (b.action === 'markreported')return resp(200, await markReported(b, headers));
       return resp(400, { error: 'unknown action' });
     }
     return resp(405, { error: 'method not allowed' });
@@ -136,7 +139,7 @@ function mapTime(r){ var f=r.fields;
     start:f['Start']||'', end:f['End']||'' }; }
 function mapLog(r){ var f=r.fields; var ph=f[W.photo]; return {
   id:r.id, issueId:f[W.problemId]||'', date:f[W.date]||'', who:f[W.who]||'', note:f[W.note]||'',
-  partNumber:f[W.partNumber]||'', qty:f[W.qty]||'',
+  partNumber:f[W.partNumber]||'', qty:f[W.qty]||'', reportedOn:f[W.reportedOn]||'',
   photo:(ph&&ph[0])?((ph[0].thumbnails&&ph[0].thumbnails.large&&ph[0].thumbnails.large.url)||ph[0].url):'' }; }
 function mapPart(r){ var f=r.fields; var s=f[PT.stock], ra=f[PT.reorderAt];
   var mx=f[PT.max]; if(mx==null) mx=MAXBYNUM[f[PT.number]];
@@ -151,7 +154,10 @@ function mapOffice(r){ var f=r.fields; return {
 function mapPO(r){ var f=r.fields; return {
   id:r.id, ref:f[PO.ref]||'', date:f[PO.date]||'', vendor:f[PO.vendor]||'', clinic:f[PO.clinic]||'',
   partNumber:f[PO.partNumber]||'', partName:f[PO.partName]||'', qty:(f[PO.qty]==null?'':f[PO.qty]),
-  rate:(f[PO.rate]==null?'':f[PO.rate]), memo:f[PO.memo]||'' }; }
+  rate:(f[PO.rate]==null?'':f[PO.rate]), memo:f[PO.memo]||'', description:f[PO.description]||'',
+  receiveBy:f[PO.receiveBy]||'', taxRate:(f[PO.taxRate]==null?'':f[PO.taxRate]),
+  amount:(f[PO.amount]==null?'':f[PO.amount]), taxAmount:(f[PO.taxAmount]==null?'':f[PO.taxAmount]),
+  lineTotal:(f[PO.lineTotal]==null?'':f[PO.lineTotal]) }; }
 
 function mapAsset(r){ var f=r.fields; return {
   id:r.id, number:f[AS.number]||'', location:f[AS.location]||'', asset:f[AS.asset]||'',
@@ -541,6 +547,8 @@ async function createPO(b, headers){
   if (!clean.length) return { ok:false, error:'Add at least one part with a quantity.' };
   // PO Ref: PO-YYYYMMDD-#### (last 4 of the timestamp keeps it unique within a day)
   var ref = String(b.ref || '').trim() || ('PO-' + date.replace(/-/g,'') + '-' + String(Date.now()).slice(-4));
+  var taxRate = (b.taxRate !== '' && b.taxRate != null && !isNaN(Number(b.taxRate))) ? Number(b.taxRate) : null;
+  var receiveBy = String(b.receiveBy || '').trim();
   var recs = clean.map(function(l){
     var f = {};
     f[PO.label]      = ref + ' \u00b7 ' + String(l.name||l.number).trim() + ' \u00d7' + Math.round(Number(l.qty));
@@ -552,6 +560,9 @@ async function createPO(b, headers){
     f[PO.partName]   = String(l.name||'').trim();
     f[PO.qty]        = Math.round(Number(l.qty));
     if (l.rate !== '' && l.rate != null && !isNaN(Number(l.rate))) f[PO.rate] = Number(l.rate);
+    if (taxRate != null) f[PO.taxRate] = taxRate;
+    if (receiveBy) f[PO.receiveBy] = receiveBy;
+    if (l.description) f[PO.description] = String(l.description).trim();
     if (memo) f[PO.memo] = memo;
     return { fields:f };
   });
@@ -564,4 +575,20 @@ async function createPO(b, headers){
     created += (j.records || []).length;
   }
   return { ok:true, ref:ref, lines:created };
+}
+
+// stamp used-part entries as reported (advances the watermark), or clear them (undo) when b.clear is set
+async function markReported(b, headers){
+  var ids = Array.isArray(b.ids) ? b.ids : [];
+  if (!ids.length) return { ok:false, error:'No entries to mark.' };
+  var date = String(b.date || '').trim() || today();
+  var clear = !!b.clear;
+  var n = 0;
+  for (var i=0;i<ids.length;i+=10){
+    var chunk = ids.slice(i,i+10).map(function(id){ var f={}; f[W.reportedOn] = clear ? null : date; return { id:id, fields:f }; });
+    var r = await fetch(API + '/' + WORKLOG, { method:'PATCH', headers:headers, body: JSON.stringify({ records:chunk, typecast:true }) });
+    if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+    var j = await r.json(); n += (j.records || []).length;
+  }
+  return { ok:true, marked:n, cleared:clear };
 }
