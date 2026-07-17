@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-partscost -->
+<!-- BUILD STAMP: v2026.07.02-pucols -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -712,6 +712,8 @@ function reportCSSblock(){
    +'h2{font-size:15px;margin:22px 0 6px;border-bottom:2px solid #66CCF6;padding-bottom:4px;}h3{font-size:13px;margin:14px 0 5px;color:#1E60A8;}h3 .n{color:#6b7a89;font-weight:600;}'
    +'table{width:100%;border-collapse:collapse;font-size:12px;}th{text-align:left;color:#6b7a89;font-size:10px;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #d9e1e7;padding:5px 6px;}'
    +'td{border-bottom:1px solid #eef2f5;padding:6px;vertical-align:top;}td i{color:#6b7a89;}.empty{color:#6b7a89;font-size:12px;}tfoot td{font-weight:700;border-top:1px solid #d9e1e7;}'
+   +'table.pu{table-layout:fixed;}table.pu th:nth-child(1),table.pu td:nth-child(1){width:44%;}table.pu th:nth-child(2),table.pu td:nth-child(2){width:20%;}'
+   +'table.pu th:nth-child(3),table.pu td:nth-child(3){width:9%;text-align:right;}table.pu th:nth-child(4),table.pu td:nth-child(4){width:13%;text-align:right;}table.pu th:nth-child(5),table.pu td:nth-child(5){width:14%;text-align:right;}'
    +'.noprint{margin-bottom:14px;}button{background:#1E60A8;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;}'
    +'@media print{.noprint{display:none;}body{padding:0;}}';
 }
@@ -828,14 +830,14 @@ function partsUsedPrintHTML(office,from,to){
   Object.keys(byO).sort().forEach(o=>{ const list=byO[o]; const agg={};
     list.forEach(r=>{ const a=agg[r.number]||(agg[r.number]={number:r.number,name:r.name,cost:r.cost,qty:0,times:0}); a.qty+=r.qty; a.times++; });
     let sub=0, subCost=0; Object.keys(agg).forEach(k=>{ sub+=agg[k].qty; if(agg[k].cost!=null) subCost+=agg[k].qty*agg[k].cost; });
-    body+='<h3>'+esc(o)+' <span class="n">'+sub+' used · '+pcMoney(subCost)+'</span></h3><table><thead><tr><th>Part</th><th>Part #</th><th>Qty</th><th>Unit cost</th><th>Cost</th></tr></thead><tbody>';
+    body+='<h3>'+esc(o)+' <span class="n">'+sub+' used · '+pcMoney(subCost)+'</span></h3><table class="pu"><thead><tr><th>Part</th><th>Part #</th><th>Qty</th><th>Unit cost</th><th>Cost</th></tr></thead><tbody>';
     Object.keys(agg).map(k=>agg[k]).sort((a,b)=>b.qty-a.qty||(a.name||'').localeCompare(b.name||'')).forEach(a=>{
       const lc=(a.cost!=null)?pcMoney(a.qty*a.cost):'—';
       body+='<tr><td>'+esc(a.name||'—')+'</td><td>'+esc(a.number)+'</td><td>'+a.qty+'</td><td>'+(a.cost!=null?pcMoney(a.cost):'—')+'</td><td>'+lc+'</td></tr>'; });
     body+='</tbody><tfoot><tr><td colspan="2">'+esc(o)+' total</td><td>'+sub+'</td><td></td><td>'+pcMoney(subCost)+'</td></tr></tfoot></table>'; });
   // overall totals by part — the reorder rollup with cost
   const all={}; rows.forEach(r=>{ const a=all[r.number]||(all[r.number]={number:r.number,name:r.name,cost:r.cost,qty:0}); a.qty+=r.qty; });
-  body+='<h2>Totals by part'+((office&&office!=='All')?'':' (all offices)')+'</h2><table><thead><tr><th>Part</th><th>Part #</th><th>Total qty</th><th>Unit cost</th><th>Total cost</th></tr></thead><tbody>';
+  body+='<h2>Totals by part'+((office&&office!=='All')?'':' (all offices)')+'</h2><table class="pu"><thead><tr><th>Part</th><th>Part #</th><th>Total qty</th><th>Unit cost</th><th>Total cost</th></tr></thead><tbody>';
   let grand=0;
   Object.keys(all).map(k=>all[k]).sort((a,b)=>b.qty-a.qty||(a.name||'').localeCompare(b.name||'')).forEach(a=>{
     const lc=(a.cost!=null)?a.qty*a.cost:null; if(lc!=null) grand+=lc;
