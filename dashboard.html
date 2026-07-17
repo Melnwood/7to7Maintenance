@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-pucols -->
+<!-- BUILD STAMP: v2026.07.02-crewmulti -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -193,6 +193,10 @@
   .polinfo{flex:1;min-width:0;} .polname{font-size:.9rem;font-weight:600;color:var(--ink);}
   .polmeta{font-size:.75rem;color:var(--muted);margin-top:1px;}
   .polqty{width:62px;flex:0 0 auto;border:1.5px solid var(--line);border-radius:9px;padding:8px;font-size:1rem;text-align:center;box-sizing:border-box;}
+  .crewchecks{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
+  .crewchk{display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--line);border-radius:11px;padding:9px 13px;font-size:.92rem;font-weight:600;color:var(--ink);cursor:pointer;background:#fff;user-select:none;}
+  .crewchk input{width:17px;height:17px;margin:0;accent-color:var(--navy);}
+  .crewchk:has(input:checked){border-color:var(--navy);background:#eef4fb;}
   .arow{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);}
   .arow:last-child{border-bottom:none;}
   .arow .al{flex:1;min-width:0;} .arow .an{font-weight:700;font-size:.88rem;color:var(--ink);}
@@ -2296,6 +2300,12 @@ function doCopyShare(){
     navigator.clipboard.writeText(t.value).then(()=>toast('Copied \u2014 paste it into an email')).catch(()=>toast(ok?'Copied \u2014 paste it into an email':'Select the message above and copy it'));
   } else { toast(ok?'Copied \u2014 paste it into an email':'Select the message above and copy it'); }
 }
+function crewChecks(id, preselect){
+  const sel=new Set(String(preselect||'').split(',').map(s=>s.trim()).filter(Boolean));
+  if(!crew.length) return '<div class="none">No crew yet — add people in Manage.</div>';
+  return '<div class="crewchecks" id="'+id+'">'+crew.map(c=>'<label class="crewchk"><input type="checkbox" value="'+esc(c)+'"'+(sel.has(c)?' checked':'')+'>'+esc(c)+'</label>').join('')+'</div>';
+}
+function readCrewChecks(id){ const w=document.getElementById(id); if(!w) return ''; return Array.from(w.querySelectorAll('input:checked')).map(x=>x.value).join(', '); }
 function openNewOrder(){
   const coff=officeNames.map(o=>'<option>'+esc(o)+'</option>').join('');
   const cwho=crew.map(c=>'<option'+(c===lastWorker?' selected':'')+'>'+esc(c)+'</option>').join('');
@@ -2307,7 +2317,7 @@ function openNewOrder(){
     '<label>What needs doing?</label><textarea id="no-problem" rows="3" placeholder="Describe the problem or task"></textarea>'+
     '<div class="twocol"><div><label>Urgency</label><select id="no-urg"><option>High</option><option selected>Medium</option><option>Low</option></select></div>'+
     '<div><label>Status</label><select id="no-status">'+cstat+'</select></div></div>'+
-    '<label>Logged by</label><select id="no-who"><option value="">Pick a person</option>'+cwho+'</select>'+
+    '<label>Workers on this job</label>'+crewChecks('no-who', lastWorker)+
     '<label>Note (optional)</label><textarea id="no-note" rows="2" placeholder="Anything to keep on record"></textarea>'+
     '<div id="no-err" class="gateerr" style="text-align:left"></div>'+
     '<button class="primary-btn" id="no-save">Create work order</button>'+
@@ -2322,7 +2332,7 @@ async function doNewOrder(){
   const problem=(document.getElementById('no-problem').value||'').trim();
   const urgency=(document.getElementById('no-urg').value||'').trim();
   const status=(document.getElementById('no-status').value||'').trim();
-  const who=(document.getElementById('no-who').value||'').trim();
+  const who=readCrewChecks('no-who');
   const note=(document.getElementById('no-note').value||'').trim();
   const err=document.getElementById('no-err');
   if(!office){ err.textContent='Pick an office.'; return; }
@@ -2395,7 +2405,7 @@ function openDetail(id){
     '<label>Work log</label><div>'+(notes.length?notes.map(nt=>'<div class="note"><div class="d">'+fmt(nt.date)+(nt.who?' · '+esc(nt.who):'')+(nt.partNumber?' · part '+esc(nt.partNumber)+(nt.qty?' ×'+nt.qty:''):'')+'</div>'+esc(cleanNote(nt.note))+(nt.photo?'<img class="notephoto" src="'+esc(nt.photo)+'">':'')+'</div>').join(''):'<div class="note" style="color:var(--muted)">No work logged here yet</div>')+'</div>'+
     (READONLY ? '' :
     '<label>Log work done</label>'+
-    '<select id="d-who"><option value="">Who did the work?</option>'+crew.map(c=>'<option>'+esc(c)+'</option>').join('')+'</select>'+
+    '<div style="font-size:.8rem;color:var(--muted);margin-top:2px">Workers (check everyone who worked on it)</div>'+crewChecks('d-who', lastWorker)+
     '<textarea id="d-note" placeholder="What did you do?" style="margin-top:8px"></textarea>'+
     '<label>Parts used</label><div id="d-parts"></div>'+
     '<button type="button" class="addpart-btn" id="d-addpart">+ add another part</button>'+
@@ -2513,7 +2523,7 @@ function renderPhotoPreview(){
 }
 
 async function addNote(id){
-  const who=$('#d-who').value, note=$('#d-note').value.trim();
+  const who=readCrewChecks('d-who'), note=$('#d-note').value.trim();
   const used=[];
   document.querySelectorAll('#d-parts .partrow').forEach(r=>{
     const num=r.querySelector('.pnum').value.trim(); const q=Number(r.querySelector('.pqty').value);
