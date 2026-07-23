@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-crewmulti -->
+<!-- BUILD STAMP: v2026.07.02-photos -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -284,6 +284,9 @@
   .photochip img{height:96px;border-radius:10px;border:1px solid var(--line);display:block;object-fit:cover;}
   .photochip button{position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;border:none;background:var(--ink);color:#fff;font-weight:800;cursor:pointer;line-height:1;}
   .notephoto{margin-top:6px;max-height:130px;border-radius:8px;border:1px solid var(--line);display:block;}
+  .photorow{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;}
+  .photorow .notephoto{max-height:104px;width:auto;}
+  .photocount{font-size:.74rem;font-weight:700;color:var(--muted);margin-top:6px;}
   .primary-btn{width:100%;margin-top:14px;background:var(--primary);color:#fff;border:none;border-radius:13px;padding:14px;font-size:1rem;font-weight:800;cursor:pointer;}
   .warn-btn{width:100%;margin-top:8px;background:#fff;border:1.5px solid var(--high);color:#C42B30;border-radius:13px;padding:12px;font-weight:800;cursor:pointer;}
   .ghost-btn{width:100%;margin-top:8px;background:none;border:none;color:var(--muted);padding:11px;font-weight:700;cursor:pointer;}
@@ -373,7 +376,7 @@ const rank={high:0,medium:1,low:2,'':3};
 const MS=86400000;
 const LAUNCH='2026-07-01'; // speed metric counts requests reported on/after this date (excludes pre-launch backfills)
 let issues=[], log=[], parts=[], tab='board', filter='', selOffice=null, sortMode='priority';
-let pendingPhoto=null;
+let pendingPhotos=[];   // several photos can ride on one work-log entry
 let whMode='order', whSearch='';
 let invMode='parts', assetSearch='', assetDrill='';
 let timelog=[], reportPane=null, lastWorker='';
@@ -2349,7 +2352,7 @@ function openClockIn(presetOffice){
   const cwho=crew.map(c=>'<option'+(c===lastWorker?' selected':'')+'>'+esc(c)+'</option>').join('');
   const coff=officeNames.map(o=>'<option'+(o===presetOffice?' selected':'')+'>'+esc(o)+'</option>').join('');
   $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 10px">Clock in</h2>'+
-    '<div class="hint">Hit this when you get to an office. Clock out when you leave.</div>'+
+    '<div class="hint">Hit this when you get to an office. Clock out when you leave.<br>If you forgot to clock out of the last office, clocking in here closes it at this time.</div>'+
     '<label>Who\u2019s working?</label><select id="ci-who"><option value="">Pick a person</option>'+cwho+'</select>'+
     '<label>Which office?</label><select id="ci-office"><option value="">Pick an office</option>'+coff+'</select>'+
     '<div id="ci-err" class="gateerr" style="text-align:left"></div>'+
@@ -2366,8 +2369,13 @@ async function doClockIn(){
   const btn=document.getElementById('ci-go'); btn.disabled=true; btn.textContent='Clocking in…';
   try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'startwork',office:office,who:who,when:when})});
     const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not clock in');
+    // Server closes any office they forgot to clock out of, stamped at this same time.
+    let prior='';
+    (d.closed||[]).forEach(c=>{ const t=timelog.find(x=>x.id===c.id); if(t) t.end=c.end; if(c.office) prior=c.office; });
     timelog.push({id:d.id,problemId:'',office:office,chair:'',who:who,start:when,end:''});
-    toast(who+' clocked in at '+office); hide(); render();
+    let msg=who+' clocked in at '+office;
+    if((d.closed||[]).length) msg+=' · clocked out of '+(prior||'the last office')+' just now';
+    toast(msg); hide(); render();
   }catch(e){ btn.disabled=false; btn.textContent='▶ Clock in'; err.textContent='Add the Time Log table in Airtable to use the clock.'; }
 }
 function openClockOutChooser(){
@@ -2402,7 +2410,7 @@ function openDetail(id){
       : '<label>Urgency</label><div class="urgencygrid" id="d-urgency">'+[['high','High'],['medium','Medium'],['low','Low']].map(p=>'<button class="'+p[0]+(p[0]===i.impact?' sel':'')+'" data-u="'+p[0]+'">'+p[1]+'</button>').join('')+'</div>'+
         '<label>Status</label><div class="statusgrid" id="d-status">'+STATUSES.map(s=>'<button class="'+(s===i.status?'sel':'')+'" data-s="'+s+'">'+s+'</button>').join('')+'</div>')+
     (i.history?'<label>History (from the logs)</label><div class="hist">'+esc(i.history)+'</div>':'')+
-    '<label>Work log</label><div>'+(notes.length?notes.map(nt=>'<div class="note"><div class="d">'+fmt(nt.date)+(nt.who?' · '+esc(nt.who):'')+(nt.partNumber?' · part '+esc(nt.partNumber)+(nt.qty?' ×'+nt.qty:''):'')+'</div>'+esc(cleanNote(nt.note))+(nt.photo?'<img class="notephoto" src="'+esc(nt.photo)+'">':'')+'</div>').join(''):'<div class="note" style="color:var(--muted)">No work logged here yet</div>')+'</div>'+
+    '<label>Work log</label><div>'+(notes.length?notes.map(nt=>'<div class="note"><div class="d">'+fmt(nt.date)+(nt.who?' · '+esc(nt.who):'')+(nt.partNumber?' · part '+esc(nt.partNumber)+(nt.qty?' ×'+nt.qty:''):'')+'</div>'+esc(cleanNote(nt.note))+notePhotos(nt)+'</div>').join(''):'<div class="note" style="color:var(--muted)">No work logged here yet</div>')+'</div>'+
     (READONLY ? '' :
     '<label>Log work done</label>'+
     '<div style="font-size:.8rem;color:var(--muted);margin-top:2px">Workers (check everyone who worked on it)</div>'+crewChecks('d-who', lastWorker)+
@@ -2410,8 +2418,8 @@ function openDetail(id){
     '<label>Parts used</label><div id="d-parts"></div>'+
     '<button type="button" class="addpart-btn" id="d-addpart">+ add another part</button>'+
     '<datalist id="partlist">'+parts.map(p=>'<option value="'+esc(p.number)+'">'+esc(p.number)+' — '+esc(p.name)+(p.bin?' ('+esc(p.bin)+')':'')+'</option>').join('')+'</datalist>'+
-    '<label>Photo</label><div id="d-photo"></div>'+
-    '<input id="d-photofile" type="file" accept="image/*" style="display:none">'+
+    '<label>Photos</label><div id="d-photo"></div>'+
+    '<input id="d-photofile" type="file" accept="image/*" multiple style="display:none">'+
     '<button class="primary-btn" id="d-add">Add to work log</button>'+
     (twins.length?'<button class="warn-btn" id="d-dup">Mark this one a duplicate (close it)</button>':''))+
     '<button class="ghost-btn" id="d-close">Done</button>'+
@@ -2421,9 +2429,15 @@ function openDetail(id){
   const dadd=document.getElementById('d-add'); if(dadd) dadd.onclick=()=>addNote(id);
   const dparts=document.getElementById('d-parts'); if(dparts){ dparts.innerHTML=''; addPartRow(); }
   const dap=document.getElementById('d-addpart'); if(dap) dap.onclick=()=>addPartRow();
-  if(!READONLY){ pendingPhoto=null; renderPhotoPreview();
-    const pf=document.getElementById('d-photofile'); if(pf) pf.onchange=async(e)=>{ const f=e.target.files&&e.target.files[0]; if(!f) return;
-      try{ pendingPhoto=await compressImage(f,1280,0.7); }catch(err){ pendingPhoto=null; toast('Could not read that photo'); }
+  if(!READONLY){ pendingPhotos=[]; renderPhotoPreview();
+    const pf=document.getElementById('d-photofile'); if(pf) pf.onchange=async(e)=>{
+      const files=Array.from(e.target.files||[]); if(!files.length) return;
+      let bad=0;
+      for(const f of files){
+        if(pendingPhotos.length>=MAXPHOTOS){ toast('Up to '+MAXPHOTOS+' photos per entry'); break; }
+        try{ pendingPhotos.push(await compressImage(f,1280,0.7)); }catch(err){ bad++; }
+      }
+      if(bad) toast(bad===1?'Could not read one photo':'Could not read '+bad+' photos');
       renderPhotoPreview(); e.target.value=''; }; }
   $('#d-close').onclick=hide;
   const ddel=document.getElementById('d-delete'); if(ddel) ddel.onclick=()=>openDeleteRequest(id);
@@ -2501,6 +2515,11 @@ function addPartRow(num,qty){
 }
 function partByNumber(n){ return parts.find(p=>String(p.number)===String(n)); }
 
+function notePhotos(nt){
+  const list=(nt.photos&&nt.photos.length)?nt.photos:(nt.photo?[nt.photo]:[]);
+  if(!list.length) return '';
+  return '<div class="photorow">'+list.map(u=>'<a href="'+esc(u)+'" target="_blank" rel="noopener"><img class="notephoto" src="'+esc(u)+'"></a>').join('')+'</div>';
+}
 function compressImage(file,maxDim,quality){
   return new Promise((resolve,reject)=>{
     const img=new Image(); const url=URL.createObjectURL(file);
@@ -2514,12 +2533,23 @@ function compressImage(file,maxDim,quality){
     img.onerror=()=>reject(new Error('bad image')); img.src=url;
   });
 }
+const MAXPHOTOS=10;
 function renderPhotoPreview(){
   const box=document.getElementById('d-photo'); if(!box) return;
-  if(pendingPhoto){ box.innerHTML='<div class="photochip"><img src="'+pendingPhoto.dataUrl+'"><button type="button" id="d-photorm" aria-label="remove photo">×</button></div>';
-    document.getElementById('d-photorm').onclick=()=>{ pendingPhoto=null; renderPhotoPreview(); }; }
-  else { box.innerHTML='<button type="button" class="addpart-btn" id="d-photobtn">+ add a photo</button>';
-    document.getElementById('d-photobtn').onclick=()=>document.getElementById('d-photofile').click(); }
+  let h='';
+  if(pendingPhotos.length){
+    h+='<div class="photorow">'+pendingPhotos.map((p,ix)=>
+      '<div class="photochip"><img src="'+p.dataUrl+'"><button type="button" class="d-photorm" data-ix="'+ix+'" aria-label="remove photo">\u00d7</button></div>').join('')+'</div>';
+  }
+  if(pendingPhotos.length<MAXPHOTOS){
+    h+='<button type="button" class="addpart-btn" id="d-photobtn">+ add '+(pendingPhotos.length?'another photo':'a photo')+'</button>';
+  }
+  if(pendingPhotos.length>1) h+='<div class="photocount">'+pendingPhotos.length+' photos ready</div>';
+  box.innerHTML=h;
+  const btn=document.getElementById('d-photobtn');
+  if(btn) btn.onclick=()=>document.getElementById('d-photofile').click();
+  box.querySelectorAll('.d-photorm').forEach(b=>b.onclick=()=>{
+    pendingPhotos.splice(Number(b.dataset.ix),1); renderPhotoPreview(); });
 }
 
 async function addNote(id){
@@ -2529,13 +2559,13 @@ async function addNote(id){
     const num=r.querySelector('.pnum').value.trim(); const q=Number(r.querySelector('.pqty').value);
     if(num) used.push({partNumber:num, qty:(q>0?q:0)});
   });
-  if(!note && !used.length && !pendingPhoto){ $('#d-note').focus(); return; }
+  if(!note && !used.length && !pendingPhotos.length){ $('#d-note').focus(); return; }
   $('#d-add').disabled=true; $('#d-add').textContent='Saving…';
   const payload={action:'note',issueId:id,who:who,note:note,parts:used};
-  if(pendingPhoto){ payload.photo=pendingPhoto.base64; payload.photoType=pendingPhoto.type; payload.photoName=pendingPhoto.name; }
+  if(pendingPhotos.length){ payload.photos=pendingPhotos.map(p=>({base64:p.base64,type:p.type,name:p.name})); }
   try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
     const d=await r.json(); if(d.error) throw new Error(d.error);
-    log.push({id:'tmp'+Date.now(),issueId:id,date:new Date().toISOString().slice(0,10),who:who,note:note,partNumber:used[0]?used[0].partNumber:'',qty:used[0]?used[0].qty:'',photo:pendingPhoto?pendingPhoto.dataUrl:''});
+    log.push({id:'tmp'+Date.now(),issueId:id,date:new Date().toISOString().slice(0,10),who:who,note:note,partNumber:used[0]?used[0].partNumber:'',qty:used[0]?used[0].qty:'',photos:pendingPhotos.map(p=>p.dataUrl),photo:pendingPhotos.length?pendingPhotos[0].dataUrl:''});
     let msg='Added to work log';
     if(d.parts&&d.parts.length){
       const ok=d.parts.filter(p=>p.matched), bad=d.parts.filter(p=>!p.matched);
@@ -2544,8 +2574,9 @@ async function addNote(id){
       else if(ok.length>1) msg='Logged · '+ok.length+' parts updated';
       if(bad.length) msg+=' · '+bad.length+' not found';
     }
-    if(d.photo===false) msg+=' · photo didn\u2019t attach';
-    pendingPhoto=null;
+    if(d.photosFailed) msg+=' · '+d.photosFailed+' photo'+(d.photosFailed===1?'':'s')+' didn\u2019t attach';
+    else if(d.photo===false && pendingPhotos.length) msg+=' · photo didn\u2019t attach';
+    pendingPhotos=[];
     toast(msg); openDetail(id);
   }catch(e){ $('#d-add').disabled=false; $('#d-add').textContent='Add to work log'; toast('Could not save'); }
 }

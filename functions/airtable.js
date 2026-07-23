@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.07.02-crewmulti
+// BUILD: v2026.07.02-photos
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -61,7 +61,7 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.07.02-crewmulti',
+        build: 'v2026.07.02-photos',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
@@ -137,10 +137,14 @@ function mapTime(r){ var f=r.fields;
   return { id:r.id, problemId:String(f['Problem ID']||'').trim(), office:String(f['Office']||'').trim(),
     chair:String(f['Chair/Area']||'').trim(), who:String(f['Who']||'').trim(),
     start:f['Start']||'', end:f['End']||'' }; }
-function mapLog(r){ var f=r.fields; var ph=f[W.photo]; return {
+function mapLog(r){ var f=r.fields; var ph=f[W.photo]||[];
+  var urls = (Array.isArray(ph)?ph:[]).map(function(a){
+    return (a && ((a.thumbnails && a.thumbnails.large && a.thumbnails.large.url) || a.url)) || ''; }).filter(Boolean);
+  return {
   id:r.id, issueId:f[W.problemId]||'', date:f[W.date]||'', who:f[W.who]||'', note:f[W.note]||'',
   partNumber:f[W.partNumber]||'', qty:f[W.qty]||'', reportedOn:f[W.reportedOn]||'',
-  photo:(ph&&ph[0])?((ph[0].thumbnails&&ph[0].thumbnails.large&&ph[0].thumbnails.large.url)||ph[0].url):'' }; }
+  photos: urls,
+  photo: urls[0] || '' }; }
 function mapPart(r){ var f=r.fields; var s=f[PT.stock], ra=f[PT.reorderAt];
   var mx=f[PT.max]; if(mx==null) mx=MAXBYNUM[f[PT.number]];
   return {
@@ -192,12 +196,14 @@ async function addIssue(b, headers){
   try { out.count = (await fetchAll(PROBLEMS, headers, '')).length; } catch(e){ /* non-fatal */ }
   // optional initial note (manager work orders often carry a detail to keep on record)
   if (b.note){ try { await logWork({ problemId:j.id, who:b.reporter||'', note:b.note }, headers); } catch(e){} }
-  // optional photo from the reporter — ride it in on an initial Work Log entry (non-fatal)
-  if (b.photo){
+  // optional photos from the reporter — ride them in on an initial Work Log entry (non-fatal)
+  var newPics = photoList(b);
+  if (newPics.length){
     try {
-      var wlId = await logWork({ problemId:j.id, who:b.reporter||'', note:'Photo from reporter' }, headers);
-      await uploadPhoto(wlId, b.photo, b.photoType, b.photoName, headers);
-      out.photo = true;
+      var wlId = await logWork({ problemId:j.id, who:b.reporter||'', note:(newPics.length>1?'Photos':'Photo')+' from reporter' }, headers);
+      var upN = await uploadPhotos(wlId, newPics, headers);
+      out.photos = upN.uploaded; out.photosFailed = upN.failed; out.photo = upN.uploaded > 0;
+      if (upN.failed) out.photoError = upN.error;
     } catch (e){ out.photo = false; out.photoError = String((e && e.message) || e); }
   }
   return out;
@@ -285,10 +291,14 @@ async function addNote(b, headers){
     }
   }
   var out = { ok:true, parts: results };
-  // attach a photo to the primary row, if one was sent (non-fatal)
-  if (b.photo && primaryId){
-    try { await uploadPhoto(primaryId, b.photo, b.photoType, b.photoName, headers); out.photo = true; }
-    catch (e){ out.photo = false; out.photoError = String((e && e.message) || e); }
+  // attach any photos to the primary row (non-fatal — a failed upload never loses the note)
+  var pics = photoList(b);
+  if (pics.length && primaryId){
+    var up = await uploadPhotos(primaryId, pics, headers);
+    out.photos = up.uploaded;
+    out.photosFailed = up.failed;
+    out.photo = up.uploaded > 0;
+    if (up.failed) out.photoError = up.error;
   }
   return out;
 }
@@ -320,6 +330,31 @@ async function logWork(b, headers){
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   var j = await r.json();
   return j.id;
+}
+
+// normalize whatever the client sent into a list of {base64,type,name}
+function photoList(b){
+  var list = [];
+  if (Array.isArray(b.photos)){
+    b.photos.forEach(function(p){
+      if (!p) return;
+      var data = (typeof p === 'string') ? p : p.base64;
+      if (!data) return;
+      list.push({ base64:data, type:(p && p.type) || 'image/jpeg', name:(p && p.name) || 'photo.jpg' });
+    });
+  }
+  if (!list.length && b.photo) list.push({ base64:b.photo, type:b.photoType||'image/jpeg', name:b.photoName||'photo.jpg' });
+  return list.slice(0, 10); // sane cap per work-log entry
+}
+
+// upload every photo onto one Work Log row (attachments accumulate, so send them one at a time)
+async function uploadPhotos(recordId, list, headers){
+  var done = 0, failed = 0, lastErr = '';
+  for (var i = 0; i < list.length; i++){
+    try { await uploadPhoto(recordId, list[i].base64, list[i].type, list[i].name, headers); done++; }
+    catch (e){ failed++; lastErr = String((e && e.message) || e); }
+  }
+  return { uploaded:done, failed:failed, error:lastErr };
 }
 
 // upload a base64 image straight into the Work Log row's Photo attachment field
@@ -471,11 +506,28 @@ async function editOffice(b, headers){
 // clock in: start an office visit (records office + who + the moment)
 async function startWork(b, headers){
   var when = b.when || new Date().toISOString();
-  var fields = { 'Office': String(b.office||'').trim(), 'Who': String(b.who||'').trim(), 'Start': when };
+  var who = String(b.who||'').trim();
+  // If they never clocked out of the last office, close it at this clock-in time.
+  // Keeps hours honest instead of leaving a session running all night.
+  var closed = [];
+  if (who){
+    try {
+      var open = await fetchAll('Time%20Log', headers, "AND({Who} = '" + esc(who) + "', {End} = BLANK())");
+      for (var i = 0; i < open.length; i++){
+        try {
+          await fetch(API + '/' + encodeURIComponent('Time Log') + '/' + open[i].id, {
+            method:'PATCH', headers:headers,
+            body: JSON.stringify({ fields:{ 'End': when }, typecast:true }) });
+          closed.push({ id:open[i].id, office:String((open[i].fields||{})['Office']||'').trim(), end:when });
+        } catch(e){ /* non-fatal — never block the new clock-in */ }
+      }
+    } catch(e){ /* Time Log missing or query failed — carry on */ }
+  }
+  var fields = { 'Office': String(b.office||'').trim(), 'Who': who, 'Start': when };
   var r = await fetch(API + '/' + encodeURIComponent('Time Log'), { method:'POST', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   var j = await r.json();
-  return { ok:true, id:j.id, start:when };
+  return { ok:true, id:j.id, start:when, closed:closed };
 }
 // close a labor session (stamp the end time on an existing Time Log row)
 async function endWork(b, headers){
