@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-officedone -->
+<!-- BUILD STAMP: v2026.07.02-alltoggle -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -196,6 +196,12 @@
   .oe-toggle{display:flex;gap:10px;align-items:flex-start;margin:14px 0 4px;padding:11px 12px;border:1.5px solid var(--line);border-radius:11px;background:#f8fafb;cursor:pointer;font-size:.9rem;line-height:1.35;font-weight:600;color:var(--ink);}
   .oe-toggle input{width:20px;height:20px;margin:1px 0 0;accent-color:var(--navy);flex:0 0 auto;}
   .oe-toggle b{color:var(--navy);}
+  .allcomp{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;margin:0 0 12px;background:#f8fafb;}
+  .allcomp .act{font-size:.9rem;font-weight:700;color:var(--ink);}
+  .allcomp .act span{display:block;font-size:.74rem;font-weight:500;color:var(--muted);margin-top:2px;}
+  .acbtns{display:flex;gap:8px;}
+  .acbtn{border:1.5px solid var(--line);background:#fff;border-radius:9px;padding:9px 13px;font-weight:800;font-size:.8rem;cursor:pointer;color:var(--ink);}
+  .acbtn.on{background:var(--navy);color:#fff;border-color:var(--navy);}
   .crewchecks{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
   .crewchk{display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--line);border-radius:11px;padding:9px 13px;font-size:.92rem;font-weight:600;color:var(--ink);cursor:pointer;background:#fff;user-select:none;}
   .crewchk input{width:17px;height:17px;margin:0;accent-color:var(--navy);}
@@ -1833,7 +1839,16 @@ function viewManage(){
   else h+='<div class="none">No crew added yet.</div>';
   h+='</div>';
   h+='<div class="vhdr">Offices<span class="vn">'+officeNames.length+'</span></div>';
-  h+='<div class="hint">Tap an office to edit its chair count or add equipment.</div><div class="panel"><div class="ogrid">';
+  h+='<div class="hint">Tap an office to edit its chair count or add equipment.</div>';
+  {
+    const onCount=(officeData||[]).filter(o=>o&&o.showCompleted).length;
+    const total=(officeData||[]).length;
+    h+='<div class="allcomp">'+
+       '<div class="act"><b>Completed work orders shown to offices</b><span>'+onCount+' of '+total+' offices on \u00b7 offices see finished jobs, not just open ones</span></div>'+
+       (READONLY?'':'<div class="acbtns"><button class="acbtn on" data-allcomplete="1">Turn all on</button><button class="acbtn" data-allcomplete="0">Turn all off</button></div>')+
+       '</div>';
+  }
+  h+='<div class="panel"><div class="ogrid">';
   officeNames.forEach(o=>{ const rec=officeRec(o); const ops=(rec&&rec.ops!==''&&rec.ops!=null)?rec.ops:null;
     const sub=(ops!=null?(ops+' chair'+(ops===1?'':'s')+' · '):'')+(cnt[o]||0)+' item'+((cnt[o]||0)===1?'':'s');
     h+='<button class="ocard clear" data-mo="'+esc(o)+'"><span class="nm">'+esc(o)+'</span><span class="ct">'+sub+'</span></button>'; });
@@ -1942,6 +1957,16 @@ function openOfficeEditor(name){
   const oeq=document.getElementById('oe-equip'); if(oeq) oeq.onclick=()=>openAddEquip(name);
   document.getElementById('oe-cancel').onclick=hide;
   show(); setTimeout(()=>{ const e=document.getElementById('oe-ops'); if(e&&!READONLY) e.focus(); },60);
+}
+async function doSetAllCompleted(val){
+  if(READONLY) return;
+  const label = val?'on':'off';
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'setallcompleted',value:val})});
+    const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not update');
+    (officeData||[]).forEach(o=>{ if(o) o.showCompleted=val; });
+    toast('Completed view turned '+label+' for all offices'); render();
+  }catch(e){ toast(String(e.message||'Could not update')); }
 }
 async function doSaveOffice(name){
   const rec=officeRec(name); const err=document.getElementById('oe-err');
@@ -2197,6 +2222,7 @@ function wire(){
   const mp=document.getElementById('mg-addperson'); if(mp) mp.onclick=()=>openAddPerson();
   $('#wrap').querySelectorAll('[data-delperson]').forEach(c=>c.onclick=()=>openRemovePerson(c.dataset.delperson,c.dataset.delname));
   $('#wrap').querySelectorAll('[data-mo]').forEach(c=>c.onclick=()=>openOfficeEditor(c.dataset.mo));
+  $('#wrap').querySelectorAll('[data-allcomplete]').forEach(c=>c.onclick=()=>doSetAllCompleted(c.dataset.allcomplete==='1'));
   const ws=document.getElementById('wh-search');
   if(ws){ ws.oninput=()=>{ const pos=ws.selectionStart; whSearch=ws.value; render();
     const n=document.getElementById('wh-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }

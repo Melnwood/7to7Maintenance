@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.07.02-photos
+// BUILD: v2026.07.02-alltoggle
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -21,7 +21,7 @@ const PHOTO_FIELD = 'fldEcNp6pnrOaYErL'; // Work Log → Photo (attachments)
 const MAXBYNUM = {"7052":15,"5873":12,"5877":5,"6161":10,"DA1175-FI":8,"4580":12,"4585":8,"DA1173-CB":4,"3635":25,"~0044":4,"8164":10,"JazzHolder":10,"DA1254-HUB":4,"DA1236UHB":10,"DA-m-0018-CST":10,"DA1153-S":6,"MGT-2450":4,"DA-M-0018-DD":2,"DA-M-0018-CSM 30K":3,"DA-M-0018-CFM 25K":1,"432T":10,"4421":4,"4425":4,"8631":2,"8959":8,"3600":6,"3640":4,"5150":8,"DA1284-5":0,"5660":15,"7795543":4,"5670":10,"8688":6,"8890":6,"7350":15,"4430":4,"4433":4,"5948":4,"120T":0,"9556059":10,"3637":18,"DA-M-0018-CSAEC":8,"DA1138-WH":4,"~0053":4,"6301":8,"DA1162-PC":2,"DA1172-A":1,"DA1287LID":2,"DA1278-Base":2,"5811":2,"5171":10,"DA0018-SOL":3,"2110":1,"P31-07E":2,"~0052":0,"AE-23":0,"P31-16":1,"S611R":40,"432R":0,"DA1340FE":0,"DA1345-SH":0,"8941":6,"JazzExt Cable":0,"G1429075":2,"G210375001":0,"G0321422":0,"9963659":0,"DA1178-CMSV":0,"DA1178-MSV":0,"9559097":14,"733":40,"Jazzext C-C":8,"8136":10,"8943":10,"DA1231-CBB":6,"7784806":10,"C Hub":5,"703":10,"0123":8,"7012":0};
 const PT = { name:'Part name', number:'Part number', stock:'In warehouse', reorderAt:'Reorder at',
              bin:'Bin', vendor:'Vendor', lastOrdered:'Last ordered', onOrder:'On order qty', orderDate:'Order date', max:'Max', cost:'Unit cost', netsuiteItem:'NetSuite Item' };
-const OF = { office:'Office', ops:'Ops', areas:'Area names', notes:'Notes' };
+const OF = { office:'Office', ops:'Ops', areas:'Area names', notes:'Notes', showCompleted:'Show completed' };
 const AS = { number:'Asset Number', location:'Location', asset:'Asset', serial:'Serial Number',
              model:'Make/Model', date:'Manufacture Date', maker:'Manufacturer', office:'Office', status:'Status', lifeOverride:'Life override' };
 // Purchase Orders — one row per PO line. PO Ref groups lines into one PO; NetSuite numbers it on import.
@@ -61,7 +61,7 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.07.02-photos',
+        build: 'v2026.07.02-alltoggle',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
@@ -97,6 +97,7 @@ exports.handler = async function (event) {
       if (b.action === 'editasset')return resp(200, await editAsset(b, headers));
       if (b.action === 'createpo')return resp(200, await createPO(b, headers));
       if (b.action === 'markreported')return resp(200, await markReported(b, headers));
+      if (b.action === 'setallcompleted')return resp(200, await setAllCompleted(b, headers));
       return resp(400, { error: 'unknown action' });
     }
     return resp(405, { error: 'method not allowed' });
@@ -154,7 +155,7 @@ function mapPart(r){ var f=r.fields; var s=f[PT.stock], ra=f[PT.reorderAt];
   cost:(f[PT.cost]==null?'':f[PT.cost]), netsuiteItem:f[PT.netsuiteItem]||'',
   orderNow:(typeof s==='number' && typeof ra==='number' && s<=ra) }; }
 function mapOffice(r){ var f=r.fields; return {
-  id:r.id, office:f[OF.office]||'', ops:(f[OF.ops]==null?'':f[OF.ops]), areas:f[OF.areas]||'', notes:f[OF.notes]||'' }; }
+  id:r.id, office:f[OF.office]||'', ops:(f[OF.ops]==null?'':f[OF.ops]), areas:f[OF.areas]||'', notes:f[OF.notes]||'', showCompleted:(f[OF.showCompleted]===true) }; }
 function mapPO(r){ var f=r.fields; return {
   id:r.id, ref:f[PO.ref]||'', date:f[PO.date]||'', vendor:f[PO.vendor]||'', clinic:f[PO.clinic]||'',
   partNumber:f[PO.partNumber]||'', partName:f[PO.partName]||'', qty:(f[PO.qty]==null?'':f[PO.qty]),
@@ -497,10 +498,24 @@ async function editOffice(b, headers){
   }
   if (b.areas !== undefined) fields[OF.areas] = String(b.areas || '').trim();
   if (b.notes !== undefined) fields[OF.notes] = String(b.notes || '').trim();
+  if (b.showCompleted !== undefined) fields[OF.showCompleted] = !!b.showCompleted;
   if (!Object.keys(fields).length) return { ok:false, error:'Nothing to update.' };
   var r = await fetch(API + '/' + OFFICES + '/' + id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   return { ok:true, id:id };
+}
+
+// Master on/off — flip "Show completed" for every office at once.
+async function setAllCompleted(b, headers){
+  var val = !!b.value;
+  var offices = await fetchAll(OFFICES, headers, '');
+  var ids = offices.map(function(o){ return o.id; });
+  for (var i = 0; i < ids.length; i += 10){
+    var recs = ids.slice(i, i+10).map(function(id){ var f={}; f[OF.showCompleted]=val; return { id:id, fields:f }; });
+    var r = await fetch(API + '/' + OFFICES, { method:'PATCH', headers:headers, body: JSON.stringify({ records:recs, typecast:true }) });
+    if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  }
+  return { ok:true, count:ids.length, value:val };
 }
 
 // clock in: start an office visit (records office + who + the moment)
