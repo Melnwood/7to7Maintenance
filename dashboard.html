@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-photos -->
+<!-- BUILD STAMP: v2026.07.02-officedone -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -193,6 +193,9 @@
   .polinfo{flex:1;min-width:0;} .polname{font-size:.9rem;font-weight:600;color:var(--ink);}
   .polmeta{font-size:.75rem;color:var(--muted);margin-top:1px;}
   .polqty{width:62px;flex:0 0 auto;border:1.5px solid var(--line);border-radius:9px;padding:8px;font-size:1rem;text-align:center;box-sizing:border-box;}
+  .oe-toggle{display:flex;gap:10px;align-items:flex-start;margin:14px 0 4px;padding:11px 12px;border:1.5px solid var(--line);border-radius:11px;background:#f8fafb;cursor:pointer;font-size:.9rem;line-height:1.35;font-weight:600;color:var(--ink);}
+  .oe-toggle input{width:20px;height:20px;margin:1px 0 0;accent-color:var(--navy);flex:0 0 auto;}
+  .oe-toggle b{color:var(--navy);}
   .crewchecks{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
   .crewchk{display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--line);border-radius:11px;padding:9px 13px;font-size:.92rem;font-weight:600;color:var(--ink);cursor:pointer;background:#fff;user-select:none;}
   .crewchk input{width:17px;height:17px;margin:0;accent-color:var(--navy);}
@@ -1923,6 +1926,7 @@ function openOfficeEditor(name){
     '<label>Chairs (ops)</label><input id="oe-ops" type="number" inputmode="numeric" min="0" step="1" placeholder="e.g. 13">'+
     '<label>Area names</label><input id="oe-areas" placeholder="optional">'+
     '<label>Notes</label><textarea id="oe-notes" rows="3" placeholder="optional"></textarea>'+
+    '<label class="oe-toggle"><input type="checkbox" id="oe-showdone"> <span>Show this office their <b>completed</b> work orders (last 30 days), not just open ones</span></label>'+
     '<div id="oe-err" class="gateerr" style="text-align:left"></div>'+
     (READONLY?'':'<button class="primary-btn" id="oe-save">Save</button>')+
     '<button class="addpart-wide" id="oe-equip" style="margin-top:10px">+ Add equipment to this office</button>'+
@@ -1931,6 +1935,7 @@ function openOfficeEditor(name){
   document.getElementById('oe-ops').value   = (rec&&rec.ops!==''&&rec.ops!=null)?rec.ops:'';
   document.getElementById('oe-areas').value = (rec&&rec.areas)?rec.areas:'';
   document.getElementById('oe-notes').value = (rec&&rec.notes)?rec.notes:'';
+  { const cb=document.getElementById('oe-showdone'); if(cb){ cb.checked = !!(rec&&rec.showCompleted); if(READONLY) cb.disabled=true; } }
   if(READONLY){ ['oe-ops','oe-areas','oe-notes'].forEach(id=>{ const e=document.getElementById(id); if(e){ e.readOnly=true; e.style.background='#f4f6f8'; } }); }
   if(!READONLY && (!rec||!rec.id)){ document.getElementById('oe-err').textContent='This office isn\u2019t in the saved office list yet, so its details can\u2019t be edited here. You can still add equipment.'; }
   const oes=document.getElementById('oe-save'); if(oes) oes.onclick=()=>doSaveOffice(name);
@@ -1945,11 +1950,12 @@ async function doSaveOffice(name){
   if(opsRaw!==''){ const n=Number(opsRaw); if(isNaN(n)||n<0){ err.textContent='Chairs must be a number (0 or more).'; return; } }
   const areas=(document.getElementById('oe-areas').value||'').trim();
   const notes=(document.getElementById('oe-notes').value||'').trim();
+  const showDone=!!document.getElementById('oe-showdone').checked;
   const btn=document.getElementById('oe-save'); btn.disabled=true; btn.textContent='Saving…';
   try{
-    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'editoffice',id:rec.id,ops:opsRaw,areas:areas,notes:notes})});
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'editoffice',id:rec.id,ops:opsRaw,areas:areas,notes:notes,showCompleted:showDone})});
     const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not save');
-    rec.ops=(opsRaw===''?'':Math.max(Math.round(Number(opsRaw)),0)); rec.areas=areas; rec.notes=notes;
+    rec.ops=(opsRaw===''?'':Math.max(Math.round(Number(opsRaw)),0)); rec.areas=areas; rec.notes=notes; rec.showCompleted=showDone;
     toast('Saved '+name); hide(); render();
   }catch(e){ btn.disabled=false; btn.textContent='Save'; err.textContent=String(e.message||'Could not save'); }
 }

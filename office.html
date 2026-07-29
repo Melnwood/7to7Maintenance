@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- BUILD STAMP: v2026.07.02-photos -->
+<!-- BUILD STAMP: v2026.07.02-officedone -->
 <title>Chair Check — Report a problem</title>
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--ink:#14202b;--muted:#6b7a89;
@@ -83,6 +83,10 @@
   .r .loc{font-weight:800;font-size:.9rem;white-space:nowrap;}
   .r .pr{flex:1;font-size:.86rem;color:#39434d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:30px;}
   .r .ag{font-size:.72rem;color:var(--muted);white-space:nowrap;}
+  .sechdr.done{margin-top:20px;border-top:1px solid var(--line);padding-top:14px;}
+  .sechdr.done .t{color:#1B7A43;} .sechdr.done .n{background:#E5F5EA;color:#1B7A43;}
+  .r.done{opacity:.72;} .r.done .dot{background:#1B7A43;}
+  .r.done .pr{text-decoration:none;} .r.done .ag{color:#1B7A43;font-weight:700;}
   .rdet{font-size:.82rem;color:#48555f;background:var(--bg);border-radius:8px;padding:9px 11px;margin:-2px 0 8px;white-space:pre-wrap;}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;
     padding:12px 18px;border-radius:999px;font-weight:700;font-size:.9rem;opacity:0;transition:opacity .2s;z-index:50;}
@@ -102,7 +106,7 @@
   </div>
 </header>
 <div class="wrap" id="app"></div>
-<div class="ver">Chair Check · v2026.07.02-photos</div>
+<div class="ver">Chair Check · v2026.07.02-officedone</div>
 <div class="toast" id="toast"></div>
 <div class="thanks" id="thanks">
   <div class="tbubble">
@@ -251,16 +255,16 @@ async function load(){
     const r=await fetch(API+'?office='+encodeURIComponent(office));
     const d=await r.json();
     if(d.error) throw new Error(d.error);
-    renderList(d.issues||[], d.worklog||[]);
+    const mineOff=(d.offices||[]).find(o=>o.office===office);
+    renderList(d.issues||[], d.worklog||[], mineOff ? !!mineOff.showCompleted : false);
   }catch(e){ $('#list').innerHTML='<div class="muted">Could not load right now. Pull to refresh in a moment.</div>'; }
 }
 
-function renderList(issues, log){
+function renderList(issues, log, showDone){
   const FLOW=['New','In progress','Pending','Part ordered'];
   const ongoing=issues.filter(i=>i.status!=='Fixed');
   const cnt=document.getElementById('list-count');
   if(cnt) cnt.textContent='('+ongoing.length+(ongoing.length===1?' open)':' open)');
-  if(!ongoing.length){ $('#list').innerHTML='<div class="empty">All clear — nothing ongoing right now.</div>'; return; }
   const rankm={high:0,medium:1,low:2,'':3};
   let h='';
   FLOW.forEach(st=>{
@@ -291,6 +295,24 @@ function renderList(issues, log){
          '<div class="rdet" id="det-'+i.id+'" style="display:none">'+det.replace(/</g,'&lt;')+'</div>';
     });
   });
+  if(showDone){
+    const done=issues.filter(i=>i.status==='Fixed').map(i=>({i:i, when:(i.fixed||i.date)}))
+      .filter(x=>{ const n=daysAgo(x.when); return n!=null && n<=30; })
+      .sort((a,b)=>(b.when||'').localeCompare(a.when||''));
+    if(done.length){
+      h+='<div class="sechdr done"><span class="t">\u2713 Recently completed</span><span class="n">'+done.length+'</span></div>';
+      done.forEach(x=>{ const i=x.i;
+        const notes=log.filter(y=>y.issueId===i.id && y.note && !/^\(same job\)/i.test(y.note) && !/^status changed/i.test(y.note) && !/\[dupe-key:/i.test(y.note) && !/not a duplicate/i.test(y.note)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+        const det='Reported '+fmt(i.date)+(i.reporter?' by '+i.reporter:'')+'\nFixed '+fmt(x.when)+(notes.length?('\n\nWork done:\n'+notes.map(c=>'\u2022 '+(c.date?fmt(c.date)+' \u2014 ':'')+c.note).join('\n')):'');
+        h+='<div class="r done" data-id="'+i.id+'"><span class="dot"></span>'+
+           '<span class="loc">'+esc(i.chair||'\u2014')+'</span>'+
+           '<span class="pr">'+esc(i.problem)+'</span>'+
+           '<span class="ag">'+fmt(x.when)+'</span></div>'+
+           '<div class="rdet" id="det-'+i.id+'" style="display:none">'+det.replace(/</g,'&lt;')+'</div>';
+      });
+    }
+  }
+  if(!h){ $('#list').innerHTML='<div class="empty">All clear \u2014 nothing ongoing right now.</div>'; return; }
   $('#list').innerHTML=h;
   $('#list').querySelectorAll('.r').forEach(r=>r.onclick=()=>{
     const d=document.getElementById('det-'+r.dataset.id);
