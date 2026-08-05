@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.07.02-alltoggle
+// BUILD: v2026.07.02-scanphoto
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -16,6 +16,7 @@ const P  = { problem:'Problem', office:'Office', chair:'Chair/Area', urgency:'Ur
 const W  = { entry:'Entry', problemId:'Problem ID', date:'Date', who:'Who', note:'Note',
              partNumber:'Part number', qty:'Qty used', photo:'Photo', reportedOn:'Reported on' };
 const PHOTO_FIELD = 'fldEcNp6pnrOaYErL'; // Work Log → Photo (attachments)
+const VISION_MODEL = 'claude-haiku-4-5-20251001'; // reads package labels; cheap + fast. Swap to claude-sonnet-4-6 for hard invoices.
 
 // "Max" target per part number (how many they want on the shelf) — from the warehouse sheet
 const MAXBYNUM = {"7052":15,"5873":12,"5877":5,"6161":10,"DA1175-FI":8,"4580":12,"4585":8,"DA1173-CB":4,"3635":25,"~0044":4,"8164":10,"JazzHolder":10,"DA1254-HUB":4,"DA1236UHB":10,"DA-m-0018-CST":10,"DA1153-S":6,"MGT-2450":4,"DA-M-0018-DD":2,"DA-M-0018-CSM 30K":3,"DA-M-0018-CFM 25K":1,"432T":10,"4421":4,"4425":4,"8631":2,"8959":8,"3600":6,"3640":4,"5150":8,"DA1284-5":0,"5660":15,"7795543":4,"5670":10,"8688":6,"8890":6,"7350":15,"4430":4,"4433":4,"5948":4,"120T":0,"9556059":10,"3637":18,"DA-M-0018-CSAEC":8,"DA1138-WH":4,"~0053":4,"6301":8,"DA1162-PC":2,"DA1172-A":1,"DA1287LID":2,"DA1278-Base":2,"5811":2,"5171":10,"DA0018-SOL":3,"2110":1,"P31-07E":2,"~0052":0,"AE-23":0,"P31-16":1,"S611R":40,"432R":0,"DA1340FE":0,"DA1345-SH":0,"8941":6,"JazzExt Cable":0,"G1429075":2,"G210375001":0,"G0321422":0,"9963659":0,"DA1178-CMSV":0,"DA1178-MSV":0,"9559097":14,"733":40,"Jazzext C-C":8,"8136":10,"8943":10,"DA1231-CBB":6,"7784806":10,"C Hub":5,"703":10,"0123":8,"7012":0};
@@ -61,7 +62,7 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.07.02-alltoggle',
+        build: 'v2026.07.02-scanphoto',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
@@ -98,6 +99,8 @@ exports.handler = async function (event) {
       if (b.action === 'createpo')return resp(200, await createPO(b, headers));
       if (b.action === 'markreported')return resp(200, await markReported(b, headers));
       if (b.action === 'setallcompleted')return resp(200, await setAllCompleted(b, headers));
+      if (b.action === 'scanlabel') return resp(200, await scanLabel(b, headers));
+      if (b.action === 'receiveqty')return resp(200, await receiveQty(b, headers));
       return resp(400, { error: 'unknown action' });
     }
     return resp(405, { error: 'method not allowed' });
@@ -397,6 +400,86 @@ async function orderPart(b, headers){
 }
 
 // receive an order: add the on-order qty into stock, clear the on-order qty (keep date as last-ordered)
+
+// ---- Receive by photo: read a package label / invoice line, match it to a part ----
+function _normNum(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function _safeJSON(t){
+  if(!t) return null;
+  var s = String(t).replace(/```json/gi,'').replace(/```/g,'').trim();
+  var a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if(a>=0 && b>a) s = s.slice(a, b+1);
+  try { return JSON.parse(s); } catch(e){ return null; }
+}
+function _matchParts(ex, parts){
+  var exNum = _normNum(ex && ex.partNumber);
+  var exName = String((ex && ex.partName) || '').toLowerCase();
+  var nameToks = exName.split(/[^a-z0-9]+/).filter(function(w){ return w.length>2; });
+  var scored = parts.map(function(p){
+    var pn = _normNum(p.number), score = 0;
+    if(exNum && pn){
+      if(pn===exNum) score = 100;
+      else if((pn.indexOf(exNum)>=0 || exNum.indexOf(pn)>=0) && Math.min(pn.length,exNum.length)>=4) score = 78;
+    }
+    if(nameToks.length && p.name){
+      var b = p.name.toLowerCase().split(/[^a-z0-9]+/).filter(function(w){ return w.length>2; });
+      var common = nameToks.filter(function(w){ return b.indexOf(w)>=0; }).length;
+      if(common) score = Math.max(score, Math.min(65, 20 + common*16));
+    }
+    return { p:p, score:score };
+  }).filter(function(x){ return x.score>0; }).sort(function(a,b){ return b.score-a.score; }).slice(0,5);
+  return scored.map(function(x){ return { id:x.p.id, number:x.p.number, name:x.p.name, inStock:x.p.inStock, bin:x.p.bin, score:x.score }; });
+}
+async function _callVision(imageB64, mediaType, prompt){
+  var key = process.env.ANTHROPIC_API_KEY;
+  if(!key) return { error:'Photo reading is not set up yet: add ANTHROPIC_API_KEY in Netlify.' };
+  var r = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{ 'x-api-key':key, 'anthropic-version':'2023-06-01', 'content-type':'application/json' },
+    body: JSON.stringify({
+      model: VISION_MODEL, max_tokens: 400,
+      messages:[{ role:'user', content:[
+        { type:'image', source:{ type:'base64', media_type:(mediaType||'image/jpeg'), data:imageB64 } },
+        { type:'text', text:prompt }
+      ]}]
+    })
+  });
+  if(!r.ok) return { error:'Vision API ' + r.status + ': ' + (await r.text()).slice(0,180) };
+  var jj = await r.json();
+  var text = (jj.content||[]).filter(function(c){ return c.type==='text'; }).map(function(c){ return c.text; }).join('\n');
+  return { text:text };
+}
+async function scanLabel(b, headers){
+  var img = b.image; if(!img) return { ok:false, error:'No photo received.' };
+  var prompt = 'This is a phone photo of a parts package label or an invoice line, for dental/veterinary equipment maintenance. '
+    + 'Read what you can. Respond with ONLY a JSON object and nothing else (no prose, no code fences). '
+    + 'Keys: partNumber (the manufacturer/vendor part number or SKU printed on it, best single guess, else ""), '
+    + 'partName (the item name/description, else ""), vendor (brand or supplier if shown, else ""), '
+    + 'quantity (integer count of units if clearly shown, else null). If unreadable use empty strings and null.';
+  var v = await _callVision(img, b.imageType, prompt);
+  if(v.error) return { ok:false, error:v.error };
+  var ex = _safeJSON(v.text) || {};
+  var parts = (await fetchAll(PARTS, headers, '')).map(mapPart);
+  var matches = _matchParts(ex, parts);
+  return { ok:true,
+    extracted:{ partNumber:(ex.partNumber||''), partName:(ex.partName||''), vendor:(ex.vendor||''), quantity:(ex.quantity==null?'':ex.quantity) },
+    matches:matches };
+}
+// add a received quantity onto a part's on-hand count (by record id, or by number)
+async function receiveQty(b, headers){
+  var rec = null;
+  if(b.id){ var r0 = await fetch(API + '/' + PARTS + '/' + b.id, { headers:headers }); if(r0.ok) rec = await r0.json(); }
+  if(!rec) rec = await findPart(String(b.number || '').trim(), headers);
+  if(!rec) return { ok:false, matched:false };
+  var qty = Math.round(Number(b.qty)||0);
+  if(qty <= 0) return { ok:false, error:'Enter how many arrived.' };
+  var cur = rec.fields[PT.stock]; cur = (typeof cur==='number' ? cur : 0);
+  var next = cur + qty;
+  var fields = {}; fields[PT.stock] = next;
+  var r = await fetch(API + '/' + PARTS + '/' + rec.id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
+  if(!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  return { ok:true, matched:true, id:rec.id, number:(rec.fields[PT.number]||''), added:qty, remaining:next };
+}
+
 async function receivePart(b, headers){
   var rec = await findPart(String(b.number || '').trim(), headers);
   if (!rec) return { ok:false, matched:false };

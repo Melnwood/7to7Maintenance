@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chair Check — Crew</title>
-<!-- BUILD STAMP: v2026.07.02-alltoggle -->
+<!-- BUILD STAMP: v2026.07.02-scanphoto -->
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--blue:#66CCF6;--navy:#1E60A8;--ink:#14202b;--muted:#6b7a89;
     --line:#d9e1e7;--bg:#f4f7f8;--surface:#fff;--high:#E5484D;--med:#E8930C;--low:#8A97A4;--green:#1B7A43;}
@@ -324,6 +324,25 @@
   .gateerr{min-height:18px;margin-top:10px;font-size:.84rem;font-weight:700;color:var(--high);}
   .shake{animation:shk .35s;}
   @keyframes shk{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-7px)}40%,80%{transform:translateX(7px)}}
+
+  .scanbtn{background:linear-gradient(180deg,#eaf2fb,#dcebf9)!important;color:var(--navy)!important;border:1.5px solid #c3ddf5!important;}
+  .scanread{display:flex;gap:11px;align-items:center;background:#f6f9fc;border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:14px;}
+  .scanread img{width:64px;height:64px;object-fit:cover;border-radius:9px;flex:0 0 auto;}
+  .srl{font-size:.64rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+  .srv{font-weight:700;font-size:.92rem;margin-top:2px;}
+  .scanmatches{display:flex;flex-direction:column;gap:7px;margin:6px 0 2px;}
+  .matchrow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:11px;padding:10px 12px;cursor:pointer;font:inherit;}
+  .matchrow.on{border-color:var(--navy);background:#eef4fb;}
+  .matchrow .ml{flex:1;}.matchrow .mn{font-weight:700;font-size:.9rem;}.matchrow .mm{font-size:.72rem;color:var(--muted);margin-top:1px;}
+  .matchrow .mscore{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:nowrap;}
+  .matchrow.on .mscore{color:var(--navy);border-color:#b9d4f2;}
+  .scanwait{display:flex;align-items:center;gap:10px;color:var(--muted);font-weight:600;font-size:.9rem;padding:6px 0;}
+  .scanprev img{width:100%;max-height:180px;object-fit:contain;border-radius:11px;border:1px solid var(--line);background:#f4f7f8;}
+  .spin{width:18px;height:18px;border:2.5px solid #cdd7e0;border-top-color:var(--navy);border-radius:50%;display:inline-block;animation:ccspin .8s linear infinite;}
+  @keyframes ccspin{to{transform:rotate(360deg)}}
+  .scannone{color:var(--muted);font-size:.86rem;padding:6px 0 2px;}
+  .scanresults{display:flex;flex-direction:column;gap:7px;max-height:340px;overflow:auto;margin:8px 0;}
+  .scanresults .empty{color:var(--muted);font-size:.86rem;padding:8px 0;}
 </style>
   <link rel="icon" type="image/png" href="data:image/png;base64,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">
   <meta name="theme-color" content="#66CCF6">
@@ -1611,6 +1630,7 @@ function viewWarehouse(){
     '<button class="'+(whMode==='order'?'on':'')+'" data-wh="order">To order'+(toOrder.length?' ('+toOrder.length+')':'')+'</button>'+
     '<button class="'+(whMode==='inv'?'on':'')+'" data-wh="inv">Inventory</button></div></div>';
   h+='<button class="addpart-wide" id="wh-addpart">+ Add a part</button>';
+  h+='<button class="addpart-wide scanbtn" id="wh-scan">\ud83d\udcf7 Receive by photo</button>';
   h+=(whMode==='order')?warehouseOrder(toOrder,onWay):warehouseInventory();
   return h;
 }
@@ -1656,6 +1676,105 @@ function warehouseInventory(){
       '<div class="po"><b>'+esc(p.inStock)+'</b><span> / '+esc(p.reorderAt)+'</span></div></div>';
   });
   return h;
+}
+let scanState=null;
+function startReceiveScan(){
+  if(READONLY) return;
+  let inp=document.getElementById('scan-file');
+  if(!inp){ inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.setAttribute('capture','environment'); inp.id='scan-file'; inp.style.display='none'; document.body.appendChild(inp); }
+  inp.value='';
+  inp.onchange=async(e)=>{ const f=e.target.files&&e.target.files[0]; if(!f) return;
+    let photo; try{ photo=await compressImage(f,1400,0.72); }catch(err){ toast('Could not read that photo'); return; }
+    scanReading(photo); };
+  inp.click();
+}
+function scanReading(photo){
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 10px">Reading the label\u2026</h2>'+
+    '<div class="scanprev"><img src="'+photo.dataUrl+'"></div>'+
+    '<div class="scanwait"><span class="spin"></span> Reading the photo\u2026</div>';
+  show();
+  fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'scanlabel',image:photo.base64,imageType:photo.type})})
+    .then(r=>r.json()).then(d=>{ if(d.error||d.ok===false){ scanError(photo,d.error||'Could not read it'); return; }
+      scanResult(photo,d.extracted||{},d.matches||[]); })
+    .catch(()=>scanError(photo,'Network problem \u2014 try again'));
+}
+function scanError(photo,msg){
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 6px">Couldn\u2019t read that one</h2>'+
+    '<div class="muted" style="margin-bottom:12px">'+esc(msg)+'</div>'+
+    '<button class="primary-btn" id="scan-retry">\ud83d\udcf7 Try another photo</button>'+
+    '<button class="ghost-btn" id="scan-manual">Find the part by hand</button>'+
+    '<button class="ghost-btn" id="scan-close">Cancel</button>';
+  document.getElementById('scan-retry').onclick=startReceiveScan;
+  document.getElementById('scan-manual').onclick=()=>{ scanState={photo:photo,ex:{},matches:[]}; openScanSearch(); };
+  document.getElementById('scan-close').onclick=hide;
+}
+function scanResult(photo,ex,matches){
+  const best=matches[0];
+  scanState={photo:photo,ex:ex,matches:matches,
+    chosenId:(best&&best.score>=90?best.id:null),
+    chosenNumber:(best&&best.score>=90?best.number:'')};
+  renderScanSheet();
+}
+function renderScanSheet(){
+  const ex=scanState.ex||{}, matches=scanState.matches||[];
+  const readLine=[ex.partNumber?('#'+ex.partNumber):'', ex.partName||'', ex.vendor||''].filter(Boolean).join(' \u00b7 ')||'nothing clear \u2014 pick by hand';
+  let h='<div class="grab"></div><h2 style="margin:0 0 4px">Receive by photo</h2>'+
+    '<div class="scanread"><img src="'+scanState.photo.dataUrl+'"><div><div class="srl">Read from the label</div><div class="srv">'+esc(readLine)+'</div></div></div>';
+  if(matches.length){
+    h+='<label>Which part is this?</label><div class="scanmatches">';
+    matches.forEach(m=>{ const on=(m.id===scanState.chosenId);
+      h+='<button type="button" class="matchrow'+(on?' on':'')+'" data-mid="'+esc(m.id)+'" data-mnum="'+esc(m.number)+'">'+
+         '<div class="ml"><div class="mn">'+esc(m.name||'\u2014')+'</div><div class="mm">#'+esc(m.number)+' \u00b7 on hand '+esc(m.inStock)+(m.bin?' \u00b7 bin '+esc(m.bin):'')+'</div></div>'+
+         '<div class="mscore">'+(m.score>=90?'best':(m.score>0?m.score+'%':'picked'))+'</div></button>'; });
+    h+='</div>';
+  } else { h+='<div class="scannone">Nothing matched what was read \u2014 pick the part by hand.</div>'; }
+  h+='<button type="button" class="ghost-btn" id="scan-pick">'+(matches.length?'None of these \u2014 search all parts':'Search all parts')+'</button>';
+  const qv=(scanState.ex&&scanState.ex.quantity!==''&&scanState.ex.quantity!=null)?scanState.ex.quantity:'';
+  h+='<label style="margin-top:14px">How many arrived?</label><input id="scan-qty" type="number" min="1" inputmode="numeric" value="'+esc(qv)+'" placeholder="count">';
+  h+='<button class="primary-btn" id="scan-confirm">Add to stock</button>';
+  h+='<button class="ghost-btn" id="scan-retry2">\ud83d\udcf7 Retake photo</button>';
+  h+='<button class="ghost-btn" id="scan-close2">Cancel</button>';
+  $('#sheet').innerHTML=h;
+  $('#sheet').querySelectorAll('.matchrow').forEach(b=>b.onclick=()=>{ scanState.chosenId=b.dataset.mid; scanState.chosenNumber=b.dataset.mnum; renderScanSheet(); });
+  document.getElementById('scan-pick').onclick=openScanSearch;
+  document.getElementById('scan-confirm').onclick=doReceiveScan;
+  document.getElementById('scan-retry2').onclick=startReceiveScan;
+  document.getElementById('scan-close2').onclick=hide;
+  show();
+}
+function openScanSearch(){
+  $('#sheet').innerHTML='<div class="grab"></div><h2 style="margin:0 0 8px">Pick the part</h2>'+
+    '<input id="scan-search" class="whsearch" placeholder="Search part, number, or vendor">'+
+    '<div id="scan-results" class="scanresults"></div>'+
+    '<button class="ghost-btn" id="scan-back">\u2039 Back</button>';
+  show();
+  const draw=(q)=>{ q=(q||'').trim().toLowerCase();
+    let list=(parts||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    if(q) list=list.filter(p=>((p.name||'')+' '+(p.number||'')+' '+(p.vendor||'')).toLowerCase().indexOf(q)>=0);
+    list=list.slice(0,40);
+    const box=document.getElementById('scan-results');
+    box.innerHTML=list.map(p=>'<button type="button" class="matchrow" data-mid="'+esc(p.id)+'" data-mnum="'+esc(p.number)+'"><div class="ml"><div class="mn">'+esc(p.name)+'</div><div class="mm">#'+esc(p.number)+' \u00b7 on hand '+esc(p.inStock)+'</div></div></button>').join('')||'<div class="empty">No parts match.</div>';
+    box.querySelectorAll('.matchrow').forEach(b=>b.onclick=()=>{
+      scanState.chosenId=b.dataset.mid; scanState.chosenNumber=b.dataset.mnum;
+      if(!scanState.matches.some(m=>m.id===b.dataset.mid)){ const p=(parts||[]).find(x=>x.id===b.dataset.mid); if(p) scanState.matches.unshift({id:p.id,number:p.number,name:p.name,inStock:p.inStock,bin:p.bin,score:0}); }
+      renderScanSheet(); }); };
+  draw('');
+  document.getElementById('scan-search').oninput=(e)=>draw(e.target.value);
+  document.getElementById('scan-back').onclick=()=>{ if(scanState.matches.length||scanState.ex.partNumber||scanState.ex.partName) renderScanSheet(); else hide(); };
+}
+async function doReceiveScan(){
+  if(!scanState.chosenId && !scanState.chosenNumber){ toast('Pick which part this is'); return; }
+  const qty=Number(document.getElementById('scan-qty').value);
+  if(!(qty>0)){ document.getElementById('scan-qty').focus(); return; }
+  const btn=document.getElementById('scan-confirm'); btn.disabled=true; btn.textContent='Adding\u2026';
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'receiveqty',id:scanState.chosenId,number:scanState.chosenNumber,qty:qty})});
+    const d=await r.json(); if(d.error||d.ok===false||d.matched===false) throw new Error(d.error||'Could not add');
+    const p=(parts||[]).find(x=>x.id===scanState.chosenId)||partByNumber(scanState.chosenNumber);
+    if(p){ p.inStock=(typeof d.remaining==='number')?d.remaining:((typeof p.inStock==='number'?p.inStock:0)+qty);
+      p.orderNow=(typeof p.inStock==='number'&&typeof p.reorderAt==='number'&&p.inStock<=p.reorderAt); }
+    toast('Added '+qty+' to '+((p&&p.name)||'stock')); hide(); render();
+  }catch(e){ btn.disabled=false; btn.textContent='Add to stock'; toast(String(e.message||'Could not add')); }
 }
 function openPart(number){
   const p=partByNumber(number); if(!p) return;
@@ -2159,6 +2278,7 @@ function wire(){
     const n=document.getElementById('as-search'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }; }
   $('#wrap').querySelectorAll('[data-part]').forEach(c=>c.onclick=()=>openPart(c.dataset.part));
   const ap=document.getElementById('wh-addpart'); if(ap) ap.onclick=openAddPart;
+  const scb=document.getElementById('wh-scan'); if(scb) scb.onclick=startReceiveScan;
   const cpo=document.getElementById('wh-createpo'); if(cpo) cpo.onclick=()=>openCreatePO('');
   const mo=document.getElementById('mg-addoffice'); if(mo) mo.onclick=()=>openAddOffice();
   const me=document.getElementById('mg-addequip'); if(me) me.onclick=()=>openAddEquip('');
