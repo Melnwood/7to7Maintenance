@@ -33,8 +33,13 @@
   <div id="signin-form">
     <label for="email">Email</label>
     <input type="email" id="email" placeholder="you@example.com" value="admin@tov-ell.com">
-    <button id="send-link">Send magic link</button>
+    <button id="send-link">Send code</button>
     <span id="signin-status"></span>
+    <div id="code-row" style="display:none; margin-top:12px;">
+      <label for="code">6-digit code from the email (use this instead of the link — corporate email security often "pre-clicks" and burns the link before you do)</label>
+      <input type="text" id="code" inputmode="numeric" placeholder="123456" maxlength="6" style="width:120px; box-sizing:border-box; padding:8px; font-size:14px; margin-bottom:8px; letter-spacing:2px;">
+      <button id="verify-code">Verify code</button>
+    </div>
   </div>
   <button id="sign-out" style="display:none;">Sign out</button>
 </section>
@@ -82,10 +87,24 @@
   document.getElementById('send-link').addEventListener('click', async () => {
     const email = document.getElementById('email').value.trim();
     const statusEl = document.getElementById('signin-status');
+    const codeRow = document.getElementById('code-row');
     if (!email){ statusEl.textContent = 'Enter an email first.'; return; }
     statusEl.textContent = 'Sending…';
     const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
-    statusEl.textContent = error ? ('Error: ' + error.message) : 'Check your email for the sign-in link, then reopen this page from that link.';
+    if (error) { statusEl.textContent = 'Error: ' + error.message; return; }
+    statusEl.textContent = 'Email sent — enter the 6-digit code below (recommended), or click the link in the email if you prefer.';
+    codeRow.style.display = 'block';
+  });
+
+  document.getElementById('verify-code').addEventListener('click', async () => {
+    const email = document.getElementById('email').value.trim();
+    const code = document.getElementById('code').value.trim();
+    const statusEl = document.getElementById('signin-status');
+    if (!code){ statusEl.textContent = 'Enter the code from the email first.'; return; }
+    statusEl.textContent = 'Verifying…';
+    const { error } = await sb.auth.verifyOtp({ email, token: code, type: 'email' });
+    statusEl.textContent = error ? ('Error: ' + error.message) : '';
+    if (!error) refreshWhoAmI();
   });
 
   document.getElementById('sign-out').addEventListener('click', async () => {
