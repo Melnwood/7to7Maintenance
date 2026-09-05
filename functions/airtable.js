@@ -1,5 +1,5 @@
 // 7to7 Maintenance — Airtable proxy (Netlify Function)
-// BUILD: v2026.07.02-scanphoto
+// BUILD: v2026.07.02-timestamp
 // Token lives ONLY in Netlify (env var AIRTABLE_TOKEN). Browser never sees it.
 
 const BASE_ID  = 'appGs7g0INHR4zicv';
@@ -62,7 +62,7 @@ exports.handler = async function (event) {
       issues.forEach(function(i){ var n=String((i.fields[P.office]||'')).trim(); if(n) offSet[n]=true; });
       var officeList = Object.keys(offSet).sort();
       return resp(200, {
-        build: 'v2026.07.02-scanphoto',
+        build: 'v2026.07.02-timestamp',
         issues: issues.map(mapIssue),
         worklog: log.map(mapLog),
         parts: parts.map(mapPart),
@@ -132,7 +132,7 @@ async function fetchAll(table, headers, formula){
 function mapIssue(r){ var f=r.fields; return {
   id:r.id, office:f[P.office]||'', chair:f[P.chair]||'', problem:f[P.problem]||'',
   impact:(f[P.urgency]||'').toLowerCase(), reporter:f[P.reporter]||'', status:f[P.status]||'New',
-  date:f[P.reported]||'', fixed:f[P.fixed]||'', history:f[P.history]||'' }; }
+  date:f[P.reported]||'', created:r.createdTime||'', fixed:f[P.fixed]||'', history:f[P.history]||'' }; }
 function mapLife(r){ var f=r.fields; var y=f['Years'];
   return { category:String(f['Category']||'').trim(), years:(y==null||y===''?null:Number(y)) }; }
 function mapPerson(r){ var f=r.fields; var act=f['Active'];

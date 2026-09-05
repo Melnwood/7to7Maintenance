@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- BUILD STAMP: v2026.07.02-scanphoto -->
+<!-- BUILD STAMP: v2026.07.02-timestamp -->
 <title>Chair Check — Report a problem</title>
 <style>
   :root{--primary:#0E7C86;--primary-press:#0a5f67;--ink:#14202b;--muted:#6b7a89;
@@ -106,7 +106,7 @@
   </div>
 </header>
 <div class="wrap" id="app"></div>
-<div class="ver">Chair Check · v2026.07.02-scanphoto</div>
+<div class="ver">Chair Check · v2026.07.02-timestamp</div>
 <div class="toast" id="toast"></div>
 <div class="thanks" id="thanks">
   <div class="tbubble">
@@ -152,6 +152,7 @@ function showThanks(count){
 function hideThanks(){ $('#thanks').classList.remove('show'); }
 $('#thanks').onclick=hideThanks;
 function fmt(d){if(!d)return'';const x=new Date(d+'T00:00');return isNaN(x)?d:x.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
+    function fmtStamp(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?'':d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
 
 let office=qs('office');
 let draft={chair:'',problem:'',impact:'',reporter:''};
@@ -278,7 +279,7 @@ function renderList(issues, log, showDone){
       const crew=notes.filter(x=>x.note && !/^\(same job\)/i.test(x.note) && !/^status changed/i.test(x.note) && !/\[dupe-key:/i.test(x.note) && !/not a duplicate/i.test(x.note));
       const lastCrew=crew[crew.length-1];
       const histLine = i.history ? String(i.history).split('\n').map(x=>x.trim()).filter(Boolean).pop() : '';
-      const det = 'Reported '+fmt(i.date)+(i.reporter?' by '+i.reporter:'')+
+      const det = 'Submitted '+(i.created?fmtStamp(i.created):fmt(i.date))+(i.reporter?' by '+i.reporter:'')+
         (crew.length?('\n\nUpdates:\n'+crew.map(c=>'• '+(c.date?fmt(c.date)+' — ':'')+c.note).join('\n')):(histLine?('\n'+histLine):''));
       let updStrip='';
       if(lastCrew){
@@ -303,7 +304,7 @@ function renderList(issues, log, showDone){
       h+='<div class="sechdr done"><span class="t">\u2713 Recently completed</span><span class="n">'+done.length+'</span></div>';
       done.forEach(x=>{ const i=x.i;
         const notes=log.filter(y=>y.issueId===i.id && y.note && !/^\(same job\)/i.test(y.note) && !/^status changed/i.test(y.note) && !/\[dupe-key:/i.test(y.note) && !/not a duplicate/i.test(y.note)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-        const det='Reported '+fmt(i.date)+(i.reporter?' by '+i.reporter:'')+'\nFixed '+fmt(x.when)+(notes.length?('\n\nWork done:\n'+notes.map(c=>'\u2022 '+(c.date?fmt(c.date)+' \u2014 ':'')+c.note).join('\n')):'');
+        const det='Submitted '+(i.created?fmtStamp(i.created):fmt(i.date))+(i.reporter?' by '+i.reporter:'')+'\nFixed '+fmt(x.when)+(notes.length?('\n\nWork done:\n'+notes.map(c=>'\u2022 '+(c.date?fmt(c.date)+' \u2014 ':'')+c.note).join('\n')):'');
         h+='<div class="r done" data-id="'+i.id+'"><span class="dot"></span>'+
            '<span class="loc">'+esc(i.chair||'\u2014')+'</span>'+
            '<span class="pr">'+esc(i.problem)+'</span>'+
