@@ -87,6 +87,7 @@ exports.handler = async function (event) {
       if (b.action === 'receive')return resp(200, await receivePart(b, headers));
       if (b.action === 'adjust') return resp(200, await adjustPart(b, headers));
       if (b.action === 'editpart')return resp(200, await editPart(b, headers));
+      if (b.action === 'deletepart')return resp(200, await deletePart(b, headers));
       if (b.action === 'addpart')return resp(200, await addPart(b, headers));
       if (b.action === 'addoffice')return resp(200, await addOffice(b, headers));
       if (b.action === 'editoffice')return resp(200, await editOffice(b, headers));
@@ -524,6 +525,20 @@ async function editPart(b, headers){
   var r = await fetch(API + '/' + PARTS + '/' + rec.id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   return { ok:true, matched:true, id:rec.id, number:(fields[PT.number] || rec.fields[PT.number] || '') };
+}
+
+// permanently remove a part from the warehouse (inventory + ordering). Doesn't touch Work Log history.
+async function deletePart(b, headers){
+  var rec = null;
+  if (b.id){
+    var r0 = await fetch(API + '/' + PARTS + '/' + b.id, { headers:headers });
+    if (r0.ok) rec = await r0.json();
+  }
+  if (!rec) rec = await findPart(String(b.number || '').trim(), headers);
+  if (!rec) return { ok:false, matched:false };
+  var r = await fetch(API + '/' + PARTS + '/' + rec.id, { method:'DELETE', headers:headers });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  return { ok:true, id:rec.id, number:(rec.fields[PT.number] || '') };
 }
 
 async function adjustPart(b, headers){

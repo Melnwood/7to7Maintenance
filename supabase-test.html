@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Supabase backend — test page (not for production use)</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 20px; }
+  .warn { background:#fff4e5; border:1px solid #f0b429; padding:10px 12px; border-radius:6px; font-size:14px; margin-bottom:20px; }
+  section { border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:16px; }
+  label { display:block; font-size:13px; color:#555; margin-bottom:4px; }
+  input[type=email] { width:100%; box-sizing:border-box; padding:8px; font-size:14px; margin-bottom:8px; }
+  button { padding:8px 14px; font-size:14px; cursor:pointer; margin-right:8px; }
+  pre { background:#f6f6f6; padding:10px; border-radius:6px; overflow:auto; max-height:400px; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+  .ok { color:#0a7a2f; }
+  .err { color:#b00020; }
+  #whoami { font-size:14px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+<h1>Supabase backend — test page</h1>
+<div class="warn">
+  Internal test page only. Not linked from the real app, not styled for real use.
+  Exercises magic-link sign-in + functions/supabase.js so the new backend can be verified
+  before anything in dashboard.html / office.html points at it.
+</div>
+
+<section>
+  <h2>1. Sign in</h2>
+  <div id="whoami">Not signed in.</div>
+  <div id="signin-form">
+    <label for="email">Email</label>
+    <input type="email" id="email" placeholder="you@example.com" value="admin@tov-ell.com">
+    <button id="send-link">Send code</button>
+    <span id="signin-status"></span>
+    <div id="code-row" style="display:none; margin-top:12px;">
+      <label for="code">6-digit code from the email (use this instead of the link — corporate email security often "pre-clicks" and burns the link before you do)</label>
+      <input type="text" id="code" inputmode="numeric" placeholder="123456" maxlength="6" style="width:120px; box-sizing:border-box; padding:8px; font-size:14px; margin-bottom:8px; letter-spacing:2px;">
+      <button id="verify-code">Verify code</button>
+    </div>
+  </div>
+  <button id="sign-out" style="display:none;">Sign out</button>
+</section>
+
+<section>
+  <h2>2. Call the backend</h2>
+  <button id="call-get">GET (load everything)</button>
+  <button id="call-addperson">POST addperson (test crew member)</button>
+  <p style="font-size:13px;color:#666;">GET returns the full dashboard payload (issues, worklog, parts, offices, assets, life, people, timelog, purchaseorders, officeList, role). The POST button adds a throwaway person named "Test Person (delete me)" so you can confirm a write round-trips and RLS lets it through.</p>
+  <pre id="output">(nothing yet)</pre>
+</section>
+
+<script>
+  // This project's URL + anon/publishable key — safe to expose client-side by design.
+  const SUPABASE_URL = 'https://ooxwogluloylimskwiwo.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veHdvZ2x1bG95bGltc2t3aXdvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwODIxMTUsImV4cCI6MjEwMzY1ODExNX0.Ev_rh2bO5DvteeZ6bFNXabhYWAS8ctIIsKGhp4C8CnM';
+
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+
+  const whoamiEl = document.getElementById('whoami');
+  const signinForm = document.getElementById('signin-form');
+  const signOutBtn = document.getElementById('sign-out');
+  const outputEl = document.getElementById('output');
+
+  function show(obj, isError){
+    outputEl.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    outputEl.className = isError ? 'err' : '';
+  }
+
+  async function refreshWhoAmI(){
+    const { data: { session } } = await sb.auth.getSession();
+    if (session && session.user){
+      whoamiEl.innerHTML = 'Signed in as <b>' + session.user.email + '</b> <span class="ok">(session active — will stay signed in)</span>';
+      signinForm.style.display = 'none';
+      signOutBtn.style.display = 'inline-block';
+    } else {
+      whoamiEl.textContent = 'Not signed in.';
+      signinForm.style.display = 'block';
+      signOutBtn.style.display = 'none';
+    }
+  }
+
+  document.getElementById('send-link').addEventListener('click', async () => {
+    const email = document.getElementById('email').value.trim();
+    const statusEl = document.getElementById('signin-status');
+    const codeRow = document.getElementById('code-row');
+    if (!email){ statusEl.textContent = 'Enter an email first.'; return; }
+    statusEl.textContent = 'Sending…';
+    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+    if (error) { statusEl.textContent = 'Error: ' + error.message; return; }
+    statusEl.textContent = 'Email sent — enter the 6-digit code below (recommended), or click the link in the email if you prefer.';
+    codeRow.style.display = 'block';
+  });
+
+  document.getElementById('verify-code').addEventListener('click', async () => {
+    const email = document.getElementById('email').value.trim();
+    const code = document.getElementById('code').value.trim();
+    const statusEl = document.getElementById('signin-status');
+    if (!code){ statusEl.textContent = 'Enter the code from the email first.'; return; }
+    statusEl.textContent = 'Verifying…';
+    const { error } = await sb.auth.verifyOtp({ email, token: code, type: 'email' });
+    statusEl.textContent = error ? ('Error: ' + error.message) : '';
+    if (!error) refreshWhoAmI();
+  });
+
+  document.getElementById('sign-out').addEventListener('click', async () => {
+    await sb.auth.signOut();
+    refreshWhoAmI();
+    show('(signed out)');
+  });
+
+  async function withToken(){
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Not signed in.');
+    return session.access_token;
+  }
+
+  document.getElementById('call-get').addEventListener('click', async () => {
+    try {
+      const token = await withToken();
+      show('Loading…');
+      const r = await fetch('/.netlify/functions/supabase', { headers: { Authorization: 'Bearer ' + token } });
+      const j = await r.json();
+      show(j, !r.ok);
+    } catch (e) { show(String(e.message || e), true); }
+  });
+
+  document.getElementById('call-addperson').addEventListener('click', async () => {
+    try {
+      const token = await withToken();
+      show('Sending…');
+      const r = await fetch('/.netlify/functions/supabase', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'addperson', name: 'Test Person (delete me)' })
+      });
+      const j = await r.json();
+      show(j, !r.ok);
+    } catch (e) { show(String(e.message || e), true); }
+  });
+
+  // Handle landing back here from the magic-link email (token is in the URL fragment).
+  sb.auth.onAuthStateChange((_event, _session) => refreshWhoAmI());
+  refreshWhoAmI();
+</script>
+</body>
+</html>

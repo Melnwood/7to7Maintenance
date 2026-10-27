@@ -1,3 +1,10 @@
 [build]
   publish = "."
   functions = "functions"
+
+[build.environment]
+  # SUPABASE_URL / SUPABASE_ANON_KEY are the project URL + publishable anon key —
+  # meant to be embedded client-side by design (Supabase's own model), not secrets.
+  # Without this, Netlify's secrets scanner fails the build on sight of their values
+  # in supabase-test.html / functions/supabase.js.
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY"
