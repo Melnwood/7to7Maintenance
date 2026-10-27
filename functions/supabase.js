@@ -64,6 +64,7 @@ exports.handler = async function (event) {
       if (b.action === 'receive')         return resp(200, await receivePart(b, ctx));
       if (b.action === 'adjust')          return resp(200, await adjustPart(b, ctx));
       if (b.action === 'editpart')        return resp(200, await editPart(b, ctx));
+      if (b.action === 'deletepart')      return resp(200, await deletePart(b, ctx));
       if (b.action === 'addpart')         return resp(200, await addPart(b, ctx));
       if (b.action === 'addoffice')       return resp(200, await addOffice(b, ctx));
       if (b.action === 'editoffice')      return resp(200, await editOffice(b, ctx));
@@ -448,6 +449,16 @@ async function editPart(b, ctx){
   if (!Object.keys(fields).length) return { ok:false, error:'Nothing to update.' };
   await updateOne('parts', rec.id, ctx.orgId, fields, ctx.token);
   return { ok:true, matched:true, id:rec.id, number:(fields.part_number || rec.part_number || '') };
+}
+
+// permanently remove a part from the warehouse (inventory + ordering). Doesn't touch work_log history.
+async function deletePart(b, ctx){
+  var rec = null;
+  if (b.id){ var rows = await sb('parts?select=*&org_id=eq.' + ctx.orgId + '&id=eq.' + b.id, {}, ctx.token); rec = rows[0]; }
+  if (!rec) rec = await findPart(ctx, String(b.number || '').trim());
+  if (!rec) return { ok:false, matched:false };
+  await deleteOne('parts', rec.id, ctx.orgId, ctx.token);
+  return { ok:true, id:rec.id, number:(rec.part_number || '') };
 }
 
 // create a brand-new part in the warehouse
