@@ -424,6 +424,7 @@ let timelog=[], reportPane=null, lastWorker='';
 let openSecs={'__replacesoon':true,'__clock':true};
 let boardMode='status';
 let dismissed={}, showDupes=false, showOfficeDupes=false;
+let catFilter='All';
 
 function toast(t,actionLabel,actionFn){const e=$('#toast');e.innerHTML='';e.appendChild(document.createTextNode(t));
   if(actionLabel&&actionFn){const b=document.createElement('span');b.className='toast-act';b.textContent=actionLabel;b.onclick=()=>{e.classList.remove('show');actionFn();};e.appendChild(b);}
@@ -520,10 +521,16 @@ function render(){
 
 function statTile(key,n,label,cls){ return '<div class="stat'+(filter===key?' on':'')+(cls?' '+cls:'')+'" data-f="'+key+'"><b>'+n+'</b><span>'+label+'</span></div>'; }
 
-function viewBoard(open){
+function catToggle(){
+  return '<div class="sortrow"><div class="seg">'+
+    ['All','Dental','Building'].map(c=>'<button class="'+(catFilter===c?'on':'')+'" data-catf="'+c+'">'+c+'</button>').join('')+
+    '</div></div>';
+}
+function viewBoard(openAll){
+  const open = catFilter==='All' ? openAll : openAll.filter(i=>(i.category||'Dental')===catFilter);
   const partsWait=open.filter(i=>i.status==='Part ordered');
-  const dupes=clustersIn(issues); let dupeCount=0; dupes.forEach(g=>dupeCount+=g.length);
-  let h='<div class="stats">'+
+  const dupes=clustersIn(issues.filter(i=>catFilter==='All'||(i.category||'Dental')===catFilter)); let dupeCount=0; dupes.forEach(g=>dupeCount+=g.length);
+  let h=catToggle()+'<div class="stats">'+
     statTile('open',open.length,'Open')+
     statTile('parts',partsWait.length,'Waiting on parts','parts')+
     statTile('dupes',dupeCount,'Duplicates','dupe')+'</div>';
@@ -706,9 +713,10 @@ function kcard(i,showStatus){
   const n=daysAgo(i.date); const old=n!=null&&n>=14;
   const pri=(i.impact&&PRILABEL[i.impact])?'<span class="kpill '+i.impact+'">'+PRILABEL[i.impact]+'</span>':'';
   const stag=showStatus?'<span class="stag">'+esc(i.status)+'</span>':'';
+  const catTag=(i.category==='Building')?'<span class="lowtag" style="background:#E8930C;color:#fff">Building</span>':'';
   const ageHtml=(n!=null)?' · <span'+(old?' class="oldtxt"':'')+'>'+ageStr(n)+'</span>':'';
   return '<div class="kcard '+(i.impact||'')+'" data-id="'+i.id+'">'+
-    '<div class="l"><span class="chair">'+esc(i.chair||'—')+stag+'</span>'+pri+'</div>'+
+    '<div class="l"><span class="chair">'+esc(i.chair||'—')+stag+catTag+'</span>'+pri+'</div>'+
     '<div class="pr">'+esc(i.problem)+'</div>'+
     '<div class="off">'+esc(i.office)+(i.date?' · submitted '+fmt(i.date):'')+ageHtml+'</div></div>';
 }
@@ -2580,6 +2588,7 @@ function wire(){
   $('#wrap').querySelectorAll('[data-back]:not([data-back="hub"]):not([data-back="mg"])').forEach(c=>c.onclick=()=>{ selOffice=null; showOfficeDupes=false; render(); });
   $('#wrap').querySelectorAll('[data-sec]').forEach(c=>c.onclick=()=>{ const s=c.dataset.sec; openSecs[s]=!openSecs[s]; render(); });
   $('#wrap').querySelectorAll('[data-bmode]').forEach(c=>c.onclick=()=>{ boardMode=c.dataset.bmode; render(); });
+  $('#wrap').querySelectorAll('[data-catf]').forEach(c=>c.onclick=()=>{ catFilter=c.dataset.catf; render(); });
   $('#wrap').querySelectorAll('[data-officedupes]').forEach(c=>c.onclick=()=>{ showOfficeDupes=!showOfficeDupes; render(); });
   $('#wrap').querySelectorAll('[data-dismiss]').forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); const key=c.dataset.dismiss; dismissed[key]=true; render(); persistNotDupe(key); });
 }
@@ -2698,6 +2707,7 @@ function openNewOrder(){
     '<label>Office</label><select id="no-office"><option value="">Pick an office</option>'+coff+'</select>'+
     '<label>Chair / area</label><input id="no-chair" placeholder="e.g. Op 4, Sterile, Pano">'+
     '<label>What needs doing?</label><textarea id="no-problem" rows="3" placeholder="Describe the problem or task"></textarea>'+
+    '<label>Category</label><div class="sortrow"><div class="seg" id="no-cat"><button type="button" class="on" data-cat="Dental">Dental</button><button type="button" data-cat="Building">Building</button></div></div>'+
     '<div class="twocol"><div><label>Urgency</label><select id="no-urg"><option>High</option><option selected>Medium</option><option>Low</option></select></div>'+
     '<div><label>Status</label><select id="no-status">'+cstat+'</select></div></div>'+
     '<label>Workers on this job</label>'+crewChecks('no-who', lastWorker)+
@@ -2707,12 +2717,16 @@ function openNewOrder(){
     '<button class="ghost-btn" id="no-cancel">Cancel</button>';
   document.getElementById('no-save').onclick=doNewOrder;
   document.getElementById('no-cancel').onclick=hide;
+  document.getElementById('no-cat').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    document.getElementById('no-cat').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); });
   show(); setTimeout(()=>{ const o=document.getElementById('no-office'); if(o) o.focus(); },60);
 }
 async function doNewOrder(){
   const office=(document.getElementById('no-office').value||'').trim();
   const chair=(document.getElementById('no-chair').value||'').trim();
   const problem=(document.getElementById('no-problem').value||'').trim();
+  const catBtn=document.getElementById('no-cat').querySelector('button.on');
+  const category=(catBtn&&catBtn.dataset.cat)||'Dental';
   const urgency=(document.getElementById('no-urg').value||'').trim();
   const status=(document.getElementById('no-status').value||'').trim();
   const who=readCrewChecks('no-who');
@@ -2722,7 +2736,7 @@ async function doNewOrder(){
   if(!problem){ err.textContent='Describe what needs doing.'; return; }
   const btn=document.getElementById('no-save'); btn.disabled=true; btn.textContent='Creating…';
   try{
-    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'add',office:office,chair:chair,problem:problem,urgency:urgency,status:status,reporter:who,note:note})});
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'add',office:office,chair:chair,problem:problem,category:category,urgency:urgency,status:status,reporter:who,note:note})});
     const d=await r.json(); if(d.error||d.ok===false) throw new Error(d.error||'Could not create');
     if(who) lastWorker=who;
     toast('Work order created'); hide(); load();
@@ -2786,9 +2800,10 @@ function openDetail(id){
     '<span class="age">submitted '+(i.created?fmtStamp(i.created):fmt(i.date))+(n>0?' · '+n+'d ago':'')+(i.reporter?' · by '+esc(i.reporter):'')+'</span>'+
     (twins.length?'<div class="dupbtn" style="margin-top:10px" id="d-twin">⚠︎ '+twins.length+' other open report'+(twins.length>1?'s':'')+' for this spot — view</div>':'')+
     (READONLY
-      ? '<label>Urgency</label><div class="muted" style="margin-bottom:8px">'+esc(i.impact||'—')+'</div><label>Status</label><div class="muted">'+esc(i.status||'—')+'</div>'
+      ? '<label>Urgency</label><div class="muted" style="margin-bottom:8px">'+esc(i.impact||'—')+'</div><label>Status</label><div class="muted">'+esc(i.status||'—')+'</div><label>Category</label><div class="muted">'+esc(i.category||'Dental')+'</div>'
       : '<label>Urgency</label><div class="urgencygrid" id="d-urgency">'+[['high','High'],['medium','Medium'],['low','Low']].map(p=>'<button class="'+p[0]+(p[0]===i.impact?' sel':'')+'" data-u="'+p[0]+'">'+p[1]+'</button>').join('')+'</div>'+
-        '<label>Status</label><div class="statusgrid" id="d-status">'+STATUSES.map(s=>'<button class="'+(s===i.status?'sel':'')+'" data-s="'+s+'">'+s+'</button>').join('')+'</div>')+
+        '<label>Status</label><div class="statusgrid" id="d-status">'+STATUSES.map(s=>'<button class="'+(s===i.status?'sel':'')+'" data-s="'+s+'">'+s+'</button>').join('')+'</div>'+
+        '<label>Category</label><div class="statusgrid" id="d-category" style="grid-template-columns:1fr 1fr">'+['Dental','Building'].map(c=>'<button class="'+(c===(i.category||'Dental')?'sel':'')+'" data-c="'+c+'">'+c+'</button>').join('')+'</div>')+
     (i.history?'<label>History (from the logs)</label><div class="hist">'+esc(i.history)+'</div>':'')+
     '<label>Work log</label><div>'+(notes.length?notes.map(nt=>'<div class="note"><div class="d">'+fmt(nt.date)+(nt.who?' · '+esc(nt.who):'')+(nt.partNumber?' · part '+esc(nt.partNumber)+(nt.qty?' ×'+nt.qty:''):'')+'</div>'+esc(cleanNote(nt.note))+notePhotos(nt)+'</div>').join(''):'<div class="note" style="color:var(--muted)">No work logged here yet</div>')+'</div>'+
     (READONLY ? '' :
@@ -2806,6 +2821,7 @@ function openDetail(id){
     (READONLY ? '' : '<button class="ghost-btn" id="d-delete" style="color:#b0384a;margin-top:2px">🗑 Delete this request</button>');
   const dstat=$('#d-status'); if(dstat) dstat.querySelectorAll('button').forEach(b=>b.onclick=()=>setStatus(id,b.dataset.s));
   const durg=$('#d-urgency'); if(durg) durg.querySelectorAll('button').forEach(b=>b.onclick=()=>setUrgency(id,b.dataset.u));
+  const dcat=$('#d-category'); if(dcat) dcat.querySelectorAll('button').forEach(b=>b.onclick=()=>setCategoryFor(id,b.dataset.c));
   const dadd=document.getElementById('d-add'); if(dadd) dadd.onclick=()=>addNote(id);
   const dparts=document.getElementById('d-parts'); if(dparts){ dparts.innerHTML=''; addPartRow(); }
   const dap=document.getElementById('d-addpart'); if(dap) dap.onclick=()=>addPartRow();
@@ -2830,6 +2846,13 @@ async function setStatus(id,status){
     const d=await r.json(); if(d.error) throw new Error(d.error);
     const i=issues.find(x=>x.id===id); if(i){ i.status=status; if(status==='Fixed') i.fixed=new Date().toISOString().slice(0,10); }
     toast('Status updated'); openDetail(id); render();
+  }catch(e){ toast('Could not update'); }
+}
+async function setCategoryFor(id,category){
+  try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'category',id:id,category:category})});
+    const d=await r.json(); if(d.error) throw new Error(d.error);
+    const i=issues.find(x=>x.id===id); if(i) i.category=category;
+    toast('Category updated'); openDetail(id); render();
   }catch(e){ toast('Could not update'); }
 }
 async function setUrgency(id,urgency){

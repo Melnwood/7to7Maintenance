@@ -58,6 +58,7 @@ exports.handler = async function (event) {
       if (b.action === 'status')          return resp(200, await setStatus(b, ctx));
       if (b.action === 'deleterequest')   return resp(200, await deleteRequest(b, ctx));
       if (b.action === 'urgency')         return resp(200, await setUrgency(b, ctx));
+      if (b.action === 'category')        return resp(200, await setCategory(b, ctx));
       if (b.action === 'notdupe')         return resp(200, await markNotDupe(b, ctx));
       if (b.action === 'note')            return resp(200, await addNote(b, ctx));
       if (b.action === 'order')           return resp(200, await orderPart(b, ctx));
@@ -175,7 +176,8 @@ async function getAll(ctx, officeFilter){
 function mapIssue(r){ return {
   id:r.id, office:r.office||'', chair:r.chair_area||'', problem:r.problem||'',
   impact:(r.urgency||'').toLowerCase(), reporter:r.reported_by||'', status:r.status||'New',
-  date:r.reported||'', fixed:r.date_fixed||'', history:r.history||'' }; }
+  date:r.reported||'', fixed:r.date_fixed||'', history:r.history||'',
+  category:(r.category||'Dental') }; }
 
 function mapLife(r){ return { category:String(r.category||'').trim(), years:(r.years==null?null:Number(r.years)) }; }
 
@@ -239,7 +241,8 @@ async function addIssue(b, ctx){
     chair_area: b.chair || '',
     reported_by: b.reporter || '',
     status: b.status || 'New',
-    reported: today()
+    reported: today(),
+    category: (b.category === 'Building') ? 'Building' : 'Dental'
   };
   if (impact === 'high') row.urgency = 'High';
   else if (b.urgency) row.urgency = b.urgency;
@@ -290,6 +293,13 @@ async function setUrgency(b, ctx){
   var val = cap(b.urgency);
   await updateOne('problems', b.id, ctx.orgId, { urgency: val }, ctx.token);
   await logWork(ctx, { problemId:b.id, who:b.who||'', note:'Priority changed to ' + val });
+  return { ok:true };
+}
+
+async function setCategory(b, ctx){
+  var cat = (b.category === 'Building') ? 'Building' : 'Dental';
+  await updateOne('problems', b.id, ctx.orgId, { category: cat }, ctx.token);
+  await logWork(ctx, { problemId:b.id, who:b.who||'', note:'Category changed to ' + cat });
   return { ok:true };
 }
 

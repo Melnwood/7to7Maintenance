@@ -12,7 +12,7 @@ const POS      = encodeURIComponent('Purchase Orders');
 const API = 'https://api.airtable.com/v0/' + BASE_ID;
 
 const P  = { problem:'Problem', office:'Office', chair:'Chair/Area', urgency:'Urgency',
-             status:'Status', reporter:'Reported by', reported:'Reported', fixed:'Date fixed', history:'History' };
+             status:'Status', reporter:'Reported by', reported:'Reported', fixed:'Date fixed', history:'History', category:'Category' };
 const W  = { entry:'Entry', problemId:'Problem ID', date:'Date', who:'Who', note:'Note',
              partNumber:'Part number', qty:'Qty used', photo:'Photo', reportedOn:'Reported on' };
 const PHOTO_FIELD = 'fldEcNp6pnrOaYErL'; // Work Log → Photo (attachments)
@@ -81,6 +81,7 @@ exports.handler = async function (event) {
       if (b.action === 'status') return resp(200, await setStatus(b, headers));
       if (b.action === 'deleterequest') return resp(200, await deleteRequest(b, headers));
       if (b.action === 'urgency')return resp(200, await setUrgency(b, headers));
+      if (b.action === 'category')return resp(200, await setCategory(b, headers));
       if (b.action === 'notdupe')return resp(200, await markNotDupe(b, headers));
       if (b.action === 'note')   return resp(200, await addNote(b, headers));
       if (b.action === 'order')  return resp(200, await orderPart(b, headers));
@@ -133,7 +134,8 @@ async function fetchAll(table, headers, formula){
 function mapIssue(r){ var f=r.fields; return {
   id:r.id, office:f[P.office]||'', chair:f[P.chair]||'', problem:f[P.problem]||'',
   impact:(f[P.urgency]||'').toLowerCase(), reporter:f[P.reporter]||'', status:f[P.status]||'New',
-  date:f[P.reported]||'', created:r.createdTime||'', fixed:f[P.fixed]||'', history:f[P.history]||'' }; }
+  date:f[P.reported]||'', created:r.createdTime||'', fixed:f[P.fixed]||'', history:f[P.history]||'',
+  category:(f[P.category]||'Dental') }; }
 function mapLife(r){ var f=r.fields; var y=f['Years'];
   return { category:String(f['Category']||'').trim(), years:(y==null||y===''?null:Number(y)) }; }
 function mapPerson(r){ var f=r.fields; var act=f['Active'];
@@ -193,6 +195,7 @@ async function addIssue(b, headers){
   fields[P.reporter] = b.reporter || '';
   fields[P.status]   = b.status || 'New';                   // manager can file it straight into a stage
   fields[P.reported] = today();
+  fields[P.category] = (b.category === 'Building') ? 'Building' : 'Dental';
   var r = await fetch(API + '/' + PROBLEMS, { method:'POST', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   var j = await r.json();
@@ -263,6 +266,15 @@ async function setUrgency(b, headers){
   var r = await fetch(API + '/' + PROBLEMS + '/' + b.id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
   if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
   await logWork({ problemId:b.id, who:b.who||'', note:'Priority changed to ' + cap(b.urgency) }, headers);
+  return { ok:true };
+}
+
+async function setCategory(b, headers){
+  var cat = (b.category === 'Building') ? 'Building' : 'Dental';
+  var fields = {}; fields[P.category] = cat;
+  var r = await fetch(API + '/' + PROBLEMS + '/' + b.id, { method:'PATCH', headers:headers, body: JSON.stringify({ fields:fields, typecast:true }) });
+  if (!r.ok) throw new Error('Airtable ' + r.status + ': ' + (await r.text()));
+  await logWork({ problemId:b.id, who:b.who||'', note:'Category changed to ' + cat }, headers);
   return { ok:true };
 }
 
