@@ -2027,7 +2027,7 @@ function openEditPart(number){
     '<div id="ep-err" class="gateerr" style="text-align:left"></div>'+
     '<button class="primary-btn" id="ep-save">Save changes</button>'+
     '<button class="ghost-btn" id="ep-cancel">Cancel</button>'+
-    '<button class="warn-btn" id="ep-delete" style="background:#b0384a">Delete this part</button>';
+    '<button class="warn-btn" id="ep-delete" style="background:#b0384a;color:#fff">Delete this part</button>';
   $('#sheet').innerHTML=h;
   document.getElementById('ep-name').value=p.name||'';
   document.getElementById('ep-number').value=p.number||'';
@@ -2049,7 +2049,7 @@ function openDeletePart(number){
     '<div class="hint"><b>'+esc(p.name)+'</b><br>#'+esc(p.number)+' · '+esc(p.vendor||'—')+'<br><br>'+
     'This removes it from both Inventory and Ordering for good. It can’t be undone — use it only for parts you no longer stock.</div>'+
     '<div id="dp-err" class="gateerr" style="text-align:left"></div>'+
-    '<button class="warn-btn" id="dp-yes" style="background:#b0384a">Delete permanently</button>'+
+    '<button class="warn-btn" id="dp-yes" style="background:#b0384a;color:#fff">Delete permanently</button>'+
     '<button class="ghost-btn" id="dp-no">Cancel</button>';
   document.getElementById('dp-yes').onclick=()=>doDeletePart(number);
   document.getElementById('dp-no').onclick=()=>openEditPart(number);
@@ -2884,7 +2884,7 @@ function openDeleteRequest(id){
     '<div class="hint"><b>'+esc(i.chair||'—')+'</b> · '+esc(i.office)+'<br>“'+esc(i.problem)+'”<br><br>'+
     'This permanently removes the request'+(notes>0?' and its '+notes+' work-log entr'+(notes===1?'y':'ies'):'')+'. It can\u2019t be undone — use it only for bad or mistaken requests.</div>'+
     '<div id="dd-err" class="gateerr" style="text-align:left"></div>'+
-    '<button class="warn-btn" id="dd-yes" style="background:#b0384a">Delete permanently</button>'+
+    '<button class="warn-btn" id="dd-yes" style="background:#b0384a;color:#fff">Delete permanently</button>'+
     '<button class="ghost-btn" id="dd-no">Cancel</button>';
   document.getElementById('dd-yes').onclick=()=>doDeleteRequest(id);
   document.getElementById('dd-no').onclick=()=>openDetail(id);
