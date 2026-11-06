@@ -126,7 +126,7 @@ const API='/.netlify/functions/airtable';
 const $=s=>document.querySelector(s);
 function qs(k){return new URLSearchParams(location.search).get(k)||'';}
 function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1800);}
+function toast(t,ms){const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),ms||1800);}
 const THANKS_MSGS=[
   "Got it \u2014 thanks! Keeping your office running is what we love to do. We\u2019ll take good care of this one.",
   "Thanks for letting us know! Adrian and Jack are on it \u2014 we\u2019ll get you taken care of.",
@@ -207,6 +207,10 @@ function render(){
   $('#f-name').oninput=$('#f-chair').oninput=$('#f-desc').oninput=sync;
   $('#f-impact').querySelectorAll('button').forEach(b=>b.onclick=()=>{
     const critical=AUTO_HIGH.test((draft.problem||'')+' '+(draft.chair||''));
+    if(b.dataset.v==='high' && !critical){
+      toast('High is set automatically for a compressor, vacuum, or autoclave/sterilizer problem — pick Medium or Low here.',3200);
+      return;
+    }
     draft.impact = critical ? 'high' : b.dataset.v;
     $('#f-impact').querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x.dataset.v===draft.impact));
     sync();
@@ -247,7 +251,10 @@ function sync(){
     draft.impact='high';
     $('#f-impact').querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x.dataset.v==='high'));
     if(note) note.style.display='block';
-  } else if(note){ note.style.display='none'; }
+  } else {
+    if(note) note.style.display='none';
+    if(draft.impact==='high'){ draft.impact=''; $('#f-impact').querySelectorAll('button').forEach(x=>x.classList.remove('sel')); }
+  }
   $('#submit').disabled=!(draft.reporter && draft.chair && draft.problem && draft.impact);
 }
 

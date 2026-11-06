@@ -176,11 +176,14 @@ function mapAsset(r){ var f=r.fields; return {
 
 // Critical equipment is always High priority, no matter what the reporter picked.
 // A down compressor / vacuum / autoclave can stop a whole office.
+// High can ONLY come from this check — an office's own "impact" pick is never trusted for High,
+// even if a client sends it directly, so the restriction holds no matter what calls this.
 var AUTO_HIGH = /(compressor|vacuum|\bvac\b|autoclave|sterilizer|steriliz)/i;
 function autoHighImpact(b){
   var text = ((b.problem || '') + ' ' + (b.chair || ''));
   if (AUTO_HIGH.test(text)) return 'high';
-  return b.impact || '';
+  var picked = String(b.impact || '').toLowerCase();
+  return (picked === 'high') ? 'medium' : picked;
 }
 
 async function addIssue(b, headers){
